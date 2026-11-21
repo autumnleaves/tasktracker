@@ -1,0 +1,29 @@
+// Renovate (the Mend-hosted GitHub app) opens PRs for new NuGet, npm, base image and action
+// versions. Merging to main deploys, with activate.sh's health check and rollback.
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended"],
+  timezone: "Australia/Melbourne",
+  // Saturday morning, so a bad release is noticed over the weekend.
+  schedule: ["* 0-6 * * 6"],
+  platformAutomerge: false,
+  packageRules: [
+    // Node in the Dockerfile and CI: LTS (even) majors only.
+    {
+      matchPackageNames: ["node"],
+      allowedVersions: "/^\\d*[02468]\\./",
+    },
+    // Minor and patch updates: one weekly PR, merged automatically when CI passes.
+    {
+      matchUpdateTypes: ["minor", "patch", "digest"],
+      groupName: "minor and patch updates",
+      automerge: true,
+    },
+    // Major updates: a PR each, for reading the release notes first.
+    {
+      matchUpdateTypes: ["major"],
+      automerge: false,
+      labels: ["major"],
+    },
+  ],
+}

@@ -1,0 +1,123 @@
+# Checks every push and pull request; deploys main to cargoship. Setup: docs/deploy.md.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: API tests
+        run: dotnet test TaskTracker.slnx -c Release
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Web app (type check and build)
+        working-directory: web
+        run: npm ci --no-audit --no-fund && npm run build
+
+      - name: Compose file
+        run: |
+          cp stack/.env.example stack/.env
+          echo IMAGE_TAG=check >>stack/.env
+          (cd stack && docker compose config -q)
+
+      - name: Shell scripts
+        run: shellcheck deploy/*.sh
+
+      - name: Image
+        run: docker build -t tasktracker:${{ github.sha }} .
+
+      # The image as deployed: a fresh database, the API, and the web app at / and on its own routes.
+      - name: Smoke test the image
+        run: |
+          mkdir -m 777 smoke-data
+          docker run -d --name smoke -p 5280:8080 --read-only --tmpfs /tmp \
+            -v "$PWD/smoke-data:/data" tasktracker:${{ github.sha }}
+          trap 'docker logs smoke' EXIT
+          for _ in $(seq 30); do curl -fsS localhost:5280/api/health && break; sleep 1; done
+          curl -fsS localhost:5280/api/health
+          curl -fsS -X POST localhost:5280/api/cards -H 'Content-Type: application/json' -d '{"title":"Smoke test","status":"todo"}'
+          curl -fsS localhost:5280/api/board | grep -q '"title":"Smoke test"'
+          curl -fsS localhost:5280/ | grep -q '<div id="root">'
+          curl -fsS 'localhost:5280/?card=1' | grep -q '<div id="root">'
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:5280/api/nope)" = 404
+          test -f smoke-data/tasks.db
+
+      - name: Save the image for the deploy
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: docker save tasktracker:${{ github.sha }} | gzip >image.tar.gz
+
+      - uses: actions/upload-artifact@v7
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          name: image
+          path: image.tar.gz
+          retention-days: 3
+
+  # As in homelab-media: pie-delivery joins the tailnet, rsyncs the bundle (the image, stack/
+  # and deploy/) as tasktracker-deploy and runs the hook. The hook re-runs setup.sh, then
+  # activate.sh, then deletes the bundle whether or not it worked.
+  deploy:
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_HOST != ''
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: deploy-cargoship-tasktracker
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+
+      - name: Stage the deploy bundle
+        run: |
+          mkdir .deploy-bundle
+          cp -r stack deploy image.tar.gz .deploy-bundle/
+
+      - uses: autumnleaves/pie-delivery@v1
+        with:
+          tailscale-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          tailscale-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          host: ${{ vars.DEPLOY_HOST }}
+          user: tasktracker-deploy
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          source: .deploy-bundle
+          target: /opt/tasktracker/incoming/${{ github.sha }}
+          post-deploy: |
+            here=$(pwd -P)
+            trap 'cd / && rm -rf -- "$here"' EXIT
+            setup=(/usr/bin/bash "$here/deploy/setup.sh" --deploy)
+            if ! sudo -n -l "${setup[@]}" >/dev/null 2>&1; then
+              echo "::error::tasktracker-deploy may not run setup.sh as root yet. Once, on cargoship, from a copy" \
+                "of the repo: 'sudo bash deploy/setup.sh', then re-run the deploy. Nothing was changed."
+              exit 1
+            fi
+            sudo -n "${setup[@]}"
+            sudo -n /usr/bin/bash "$here/deploy/activate.sh" ${{ github.sha }}
