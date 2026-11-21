@@ -19,7 +19,12 @@ var app = builder.Build();
 
 app.Services.GetRequiredService<Database>().Migrate(app.Logger);
 
-app.UseExceptionHandler();
+// Malformed requests (bad JSON, an unknown status) are 400s, also in Development, where minimal
+// APIs throw for them instead of answering.
+app.UseExceptionHandler(new ExceptionHandlerOptions
+{
+    StatusCodeSelector = e => e is BadHttpRequestException bad ? bad.StatusCode : StatusCodes.Status500InternalServerError,
+});
 app.UseStatusCodePages();
 
 // The built web app (web/dist), copied into wwwroot by the Dockerfile. In development the
