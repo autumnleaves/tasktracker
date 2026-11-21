@@ -1,0 +1,20 @@
+# The task tracker on cargoship. Settings: .env (from .env.example plus IMAGE_TAG, written by
+# deploy/activate.sh). The image comes in the deploy bundle (docker load), not from a registry.
+#
+# Published on cargoship's port ${PORT}: http://cargoship:5280 on the tailnet, and
+# https://tasktracker.autumnleaves.net through the Caddy proxy in homelab-media.
+name: tasktracker
+
+services:
+  tasktracker:
+    image: tasktracker:${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      TZ: ${STACK_TZ}
+    volumes:
+      # The SQLite database (tasks.db) and its pre-migration backups (backups/).
+      - ${DATA_ROOT}:/data
+    ports: ["${PORT}:8080"]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
