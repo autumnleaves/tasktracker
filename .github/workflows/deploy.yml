@@ -100,7 +100,7 @@ jobs:
           mkdir .deploy-bundle
           cp -r stack deploy image.tar.gz .deploy-bundle/
 
-      - uses: autumnleaves/pie-delivery@v1
+      - uses: autumnleaves/pie-delivery@bcc0179516cbf33c715206748872183d9ccc17a5 # v1.0.0
         with:
           tailscale-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           tailscale-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
