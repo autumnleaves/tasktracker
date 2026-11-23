@@ -2,8 +2,9 @@
 # .env.example plus APP_ROOT (/opt/apps/tasktracker) and RELEASE (the git SHA), written per
 # release. The image comes in the deploy bundle (docker load), not from a registry.
 #
-# Published on cargoship's port ${PORT}: http://cargoship:5280 on the tailnet, and
-# https://tasktracker.autumnleaves.net through the Caddy proxy in homelab-media.
+# Published on cargoship's port ${PORT}: http://cargoship:5280 at home and on the tailnet. With a
+# tunnel token, cloudflared also serves https://tasktracker.autumnleaves.net from anywhere, behind
+# Cloudflare Access.
 name: tasktracker
 
 services:
@@ -18,4 +19,18 @@ services:
     ports: ["${PORT}:8080"]
     read_only: true
     tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+
+  # Cloudflare Tunnel to this app, for https://tasktracker.autumnleaves.net behind Cloudflare
+  # Access (Tom's login in a browser, a service token for Claude). The tunnel's public hostname,
+  # pointing at http://tasktracker:8080, is set in the Cloudflare dashboard. Started only when the
+  # deploy has a token: the workflow then sets COMPOSE_PROFILES=tunnel.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.8.1
+    profiles: [tunnel]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on: [tasktracker]
     security_opt: ["no-new-privileges:true"]

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { Card, CardFields, Column, Label, Status } from "./api";
 import { PRIORITIES, PRIORITY_NAMES, errorMessage } from "./api";
 import { longDateTime, toggleChecklistItem } from "./format";
+import { Comments } from "./Comments";
 import { LabelPicker } from "./LabelPicker";
 import { MarkdownView } from "./Markdown";
 
@@ -17,6 +18,8 @@ interface Props {
   onMove: (id: number, status: Status) => void;
   onDelete: (id: number) => Promise<void>;
   onCreateLabel: (name: string) => Promise<Label>;
+  /** A comment was added or deleted. */
+  onCommentsChange: () => void;
 }
 
 type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved" } | { kind: "error"; message: string };
@@ -130,7 +133,7 @@ export function CardPanel(props: Props) {
 
   return (
     <div className="panel-backdrop" onMouseDown={(e) => e.target === e.currentTarget && void close()}>
-      <aside className="panel" role="dialog" aria-modal="true" aria-label={isNew ? "New card" : `Card #${card.id}`}>
+      <aside className="panel" data-priority={draft.priority} role="dialog" aria-modal="true" aria-label={isNew ? "New card" : `Card #${card.id}`}>
         <header className="panel-head">
           <span className="panel-number">{isNew ? "New card" : `#${card.id}`}</span>
           {!isNew && <SaveIndicator state={save} />}
@@ -230,6 +233,13 @@ export function CardPanel(props: Props) {
             )}
             <p className="hint">Markdown: **bold**, [links](https://…), and “- [ ]” for checklist items.</p>
           </div>
+
+          {!isNew && (
+            <div className="panel-section">
+              <h3>Comments</h3>
+              <Comments cardId={card.id} onChange={props.onCommentsChange} />
+            </div>
+          )}
         </div>
 
         <footer className="panel-foot">

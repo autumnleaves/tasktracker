@@ -1,22 +1,33 @@
-/* Tasks: index cards on a felt board. The cards carry the look (a red header rule over faint blue
-   ruled lines, titles in Recursive's casual cut); everything around them stays plain. */
+/* Tasks: index cards pinned to a cork board. Each column has its own pin colour, and each card's
+   header rule takes its priority's colour (blue for medium), over faint blue ruled lines. Titles
+   are in Recursive's casual cut; the chrome stays plain. */
 
 :root {
-  --felt: #d6dcd4;
-  --tray: #e3e8e1;
-  --card: #ffffff;
-  --ink: #1e2a35;
-  --ink-soft: #5b6772;
-  --ink-faint: #8b949b;
-  --rule-red: #c8323c;
-  --rule-blue: #dbe5f0;
-  --accent: #2e5a8a;
+  --cork: #d7b58b;
+  --speck-dark: rgb(118 76 36 / 18%);
+  --speck-light: rgb(255 246 228 / 35%);
+  --tray: rgb(255 250 242 / 60%);
+  --card: #fffdf8;
+  --ink: #2b241c;
+  --ink-soft: #6b5c4c;
+  --ink-faint: #9a8a78;
+  --rule-blue: #dfe7f2;
+  --accent: #1f62c7;
   --accent-ink: #ffffff;
-  --amber: #a85f08;
-  --line: #c3cbc1;
+  --line: #dac9b2;
   --field: #ffffff;
-  --shadow: 0 1px 0 rgb(30 42 53 / 8%), 0 2px 6px rgb(30 42 53 / 6%);
-  --lift: 0 10px 28px rgb(30 42 53 / 22%);
+  --shadow: 0 1px 0 rgb(80 50 20 / 12%), 0 3px 8px rgb(80 50 20 / 12%);
+  --lift: 0 12px 30px rgb(60 35 10 / 28%);
+
+  --p-urgent: #d23f3f;
+  --p-high: #e0820a;
+  --p-medium: #2f6fd0;
+  --p-low: #8a9d94;
+  --c-backlog: #8b62d6;
+  --c-todo: #2f6fd0;
+  --c-in_progress: #e0820a;
+  --c-done: #2f9e63;
+  --rule: var(--p-medium);
 
   --font: "Recursive Variable", system-ui, sans-serif;
   --casual: "CASL" 1;
@@ -27,28 +38,58 @@
   font-size: 15px;
   line-height: 1.45;
   color: var(--ink);
-  background: var(--felt);
+  background-color: var(--cork);
+  /* Cork: two offset speckle grids. */
+  background-image:
+    radial-gradient(var(--speck-dark) 1px, transparent 1.6px),
+    radial-gradient(var(--speck-light) 1px, transparent 1.6px);
+  background-size: 7px 7px, 11px 11px;
+  background-position: 0 0, 3px 5px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --felt: #1a211f;
-    --tray: #222a28;
-    --card: #2b3432;
-    --ink: #e4e9e6;
-    --ink-soft: #a2ada8;
-    --ink-faint: #75817c;
-    --rule-red: #e0636b;
-    --rule-blue: #33403f;
-    --accent: #86aedb;
-    --accent-ink: #10202f;
-    --amber: #e3a24b;
-    --line: #3a4542;
-    --field: #1f2725;
-    --shadow: 0 1px 0 rgb(0 0 0 / 30%);
-    --lift: 0 10px 28px rgb(0 0 0 / 50%);
+    --cork: #3a2c20;
+    --speck-dark: rgb(0 0 0 / 30%);
+    --speck-light: rgb(255 220 180 / 7%);
+    --tray: rgb(24 17 11 / 45%);
+    --card: #2f2a25;
+    --ink: #f0e8dd;
+    --ink-soft: #c2b4a4;
+    --ink-faint: #918373;
+    --rule-blue: #3b3a3d;
+    --accent: #79abff;
+    --accent-ink: #0f1d33;
+    --line: #4d4136;
+    --field: #26211d;
+    --shadow: 0 1px 0 rgb(0 0 0 / 35%), 0 3px 8px rgb(0 0 0 / 25%);
+    --lift: 0 12px 30px rgb(0 0 0 / 55%);
+    --p-urgent: #f06a6a;
+    --p-high: #f2a33a;
+    --p-medium: #6d9ff0;
+    --p-low: #93a69d;
+    --c-backlog: #a585e6;
+    --c-todo: #6d9ff0;
+    --c-in_progress: #f2a33a;
+    --c-done: #56c08a;
     color-scheme: dark;
   }
+}
+
+[data-priority="urgent"] {
+  --rule: var(--p-urgent);
+}
+
+[data-priority="high"] {
+  --rule: var(--p-high);
+}
+
+[data-priority="medium"] {
+  --rule: var(--p-medium);
+}
+
+[data-priority="low"] {
+  --rule: var(--p-low);
 }
 
 * {
@@ -103,13 +144,13 @@ button.quiet:hover:not(:disabled) {
 }
 
 button.danger {
-  background: var(--rule-red);
+  background: var(--p-urgent);
   color: #fff;
   font-weight: 600;
 }
 
 button.danger-text {
-  color: var(--rule-red);
+  color: var(--p-urgent);
 }
 
 button.small {
@@ -132,7 +173,7 @@ textarea {
 }
 
 .field-error {
-  color: var(--rule-red);
+  color: var(--p-urgent);
   font-size: 13px;
   margin: 4px 0 0;
 }
@@ -155,6 +196,7 @@ textarea {
 
 .topbar h1 {
   margin: 0;
+  color: var(--ink);
   font-size: 22px;
   font-weight: 800;
   font-variation-settings: var(--casual);
@@ -184,8 +226,9 @@ textarea {
 .filter-chip {
   padding: 3px 9px;
   border-radius: 999px;
-  border-color: var(--line);
+  background: var(--tray);
   font-size: 13px;
+  font-weight: 600;
   color: var(--ink-soft);
 }
 
@@ -219,16 +262,34 @@ textarea {
 /* Columns */
 
 .lane {
+  --lane: var(--ink-faint);
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--tray);
+  border-top: 4px solid var(--lane);
   border-radius: 10px;
   transition: background 120ms;
 }
 
+.lane-backlog {
+  --lane: var(--c-backlog);
+}
+
+.lane-todo {
+  --lane: var(--c-todo);
+}
+
+.lane-in_progress {
+  --lane: var(--c-in_progress);
+}
+
+.lane-done {
+  --lane: var(--c-done);
+}
+
 .lane.over {
-  background: color-mix(in srgb, var(--tray) 70%, var(--card));
+  background: color-mix(in srgb, var(--lane) 14%, var(--tray));
 }
 
 .lane-head {
@@ -239,13 +300,26 @@ textarea {
 }
 
 .lane-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   font-size: 14px;
   font-weight: 700;
 }
 
+/* The column's pin. */
+.lane-head h2::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--lane);
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 22%), 0 1px 1px rgb(0 0 0 / 25%);
+}
+
 .lane-count {
-  color: var(--ink-faint);
+  color: var(--ink-soft);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
@@ -343,7 +417,7 @@ textarea {
   align-items: center;
   justify-content: space-between;
   height: 32px;
-  border-bottom: 2px solid var(--rule-red);
+  border-bottom: 2px solid var(--rule);
   margin: 0 -12px 2px;
   padding: 0 12px;
   font-size: 12px;
@@ -359,18 +433,12 @@ textarea {
   font-size: 12px;
 }
 
-[data-priority="urgent"] .priority,
-.filter-chip[data-priority="urgent"] {
-  color: var(--rule-red);
-}
-
-[data-priority="high"] .priority,
-.filter-chip[data-priority="high"] {
-  color: var(--amber);
+.priority,
+.filter-chip[data-priority] {
+  color: var(--rule);
 }
 
 [data-priority="low"] .priority {
-  color: var(--ink-faint);
   font-weight: 500;
 }
 
@@ -406,7 +474,7 @@ textarea {
 }
 
 .due.overdue {
-  color: var(--rule-red);
+  color: var(--p-urgent);
   font-weight: 700;
 }
 
@@ -416,7 +484,7 @@ textarea {
 }
 
 .tasks.all {
-  color: #2f8f6b;
+  color: var(--c-done);
 }
 
 .label-chip {
@@ -488,7 +556,12 @@ textarea {
   align-items: center;
   gap: 12px;
   padding: 12px 20px;
-  border-bottom: 2px solid var(--rule-red);
+  border-bottom: 2px solid var(--line);
+}
+
+.panel .panel-head {
+  border-bottom: 3px solid var(--rule);
+  transition: border-color 150ms;
 }
 
 .panel-head h2 {
@@ -513,7 +586,7 @@ textarea {
 }
 
 .save-state.error {
-  color: var(--rule-red);
+  color: var(--p-urgent);
 }
 
 .panel-body {
@@ -798,6 +871,54 @@ textarea {
   padding: 0 20px;
 }
 
+.comment-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.comment {
+  border-left: 3px solid var(--line);
+  padding: 2px 0 2px 10px;
+}
+
+/* Comments from Claude (through the API) stand out a little. */
+.comment[data-author="claude"] {
+  border-left-color: var(--c-backlog);
+}
+
+.comment-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.comment-author {
+  font-weight: 700;
+}
+
+.comment-time {
+  color: var(--ink-faint);
+  font-size: 12px;
+  margin-right: auto;
+}
+
+.comment-input {
+  width: 100%;
+  resize: vertical;
+}
+
+.comment-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
 .toasts {
   position: fixed;
   left: 20px;
@@ -810,7 +931,7 @@ textarea {
 
 .toast {
   background: var(--ink);
-  color: var(--felt);
+  color: var(--card);
   padding: 10px 14px;
   border-radius: 8px;
   max-width: 420px;

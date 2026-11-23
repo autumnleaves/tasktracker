@@ -28,10 +28,7 @@ public sealed class BoardStore(Database db, TimeProvider time)
     public BoardView GetBoard()
     {
         using var c = db.Open();
-        var links = c.Query<(long CardId, long LabelId)>("SELECT card_id, label_id FROM card_labels")
-            .ToLookup(l => l.CardId, l => l.LabelId);
-        var cards = c.Query<CardRow>($"SELECT {CardColumns} FROM cards")
-            .Select(r => ToCard(r, [.. links[r.Id].Order()]))
+        var cards = LoadCards(c, "", null)
             .OrderBy(card => card.Status)
             .ThenBy(card => card.Position)
             .ThenBy(card => card.Id)
@@ -195,6 +192,81 @@ public sealed class BoardStore(Database db, TimeProvider time)
         return c.Execute("DELETE FROM labels WHERE id = @id", new { id }) > 0;
     }
 
+    /// <summary>
+    /// The ids of labels with these names (ignoring case), making any that don't exist yet with
+    /// the next unused colour.
+    /// </summary>
+    public IReadOnlyList<long> LabelIdsByName(IEnumerable<string> names)
+    {
+        using var c = db.Open();
+        using var tx = c.BeginTransaction();
+        var ids = new List<long>();
+        foreach (var name in names.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var id = c.QuerySingleOrDefault<long?>(
+                "SELECT id FROM labels WHERE name = @name COLLATE NOCASE", new { name }, tx);
+            if (id is null)
+            {
+                var used = c.Query<string>("SELECT color FROM labels", transaction: tx).ToHashSet();
+                var color = LabelColors.FirstOrDefault(col => !used.Contains(col)) ?? LabelColors[used.Count % LabelColors.Length];
+                id = c.ExecuteScalar<long>(
+                    "INSERT INTO labels (name, color) VALUES (@name, @color) RETURNING id", new { name, color }, tx);
+            }
+            ids.Add(id.Value);
+        }
+        tx.Commit();
+        return ids;
+    }
+
+    // The web app's label palette (web/src/LabelChip.tsx), for labels made by name.
+    private static readonly string[] LabelColors =
+        ["#3d6fa8", "#2f8f6b", "#b4690e", "#8a4fb5", "#c8323c", "#3f8a9c", "#7d6b22", "#66707a"];
+
+    /// <summary>A card's comments, oldest first, or null if there's no such card.</summary>
+    public IReadOnlyList<Comment>? GetComments(long cardId)
+    {
+        using var c = db.Open();
+        if (c.ExecuteScalar<long>("SELECT COUNT(*) FROM cards WHERE id = @cardId", new { cardId }) == 0) return null;
+        return
+        [
+            .. c.Query<CommentRow>(
+                    $"SELECT {CommentColumns} FROM comments WHERE card_id = @cardId ORDER BY id", new { cardId })
+                .Select(ToComment),
+        ];
+    }
+
+    /// <summary>Adds a comment, or returns null if there's no such card.</summary>
+    public Comment? AddComment(long cardId, string author, string body)
+    {
+        using var c = db.Open();
+        if (c.ExecuteScalar<long>("SELECT COUNT(*) FROM cards WHERE id = @cardId", new { cardId }) == 0) return null;
+        var now = Now();
+        var id = c.ExecuteScalar<long>(
+            "INSERT INTO comments (card_id, author, body, created_at) VALUES (@cardId, @author, @body, @now) RETURNING id",
+            new { cardId, author, body, now });
+        return new Comment(id, cardId, author, body, ParseTime(now));
+    }
+
+    public bool DeleteComment(long id)
+    {
+        using var c = db.Open();
+        return c.Execute("DELETE FROM comments WHERE id = @id", new { id }) > 0;
+    }
+
+    private const string CommentColumns =
+        "id AS Id, card_id AS CardId, author AS Author, body AS Body, created_at AS CreatedAt";
+
+    private static Comment ToComment(CommentRow r) => new(r.Id, r.CardId, r.Author, r.Body, ParseTime(r.CreatedAt));
+
+    private sealed class CommentRow
+    {
+        public long Id { get; init; }
+        public long CardId { get; init; }
+        public string Author { get; init; } = "";
+        public string Body { get; init; } = "";
+        public string CreatedAt { get; init; } = "";
+    }
+
     private static void SetLabels(SqliteConnection c, SqliteTransaction tx, long cardId, IReadOnlyCollection<long> labelIds)
     {
         c.Execute("DELETE FROM card_labels WHERE card_id = @cardId", new { cardId }, tx);
@@ -204,13 +276,34 @@ public sealed class BoardStore(Database db, TimeProvider time)
             tx);
     }
 
-    private static Card? Load(SqliteConnection c, long id)
+    private static Card? Load(SqliteConnection c, long id) =>
+        LoadCards(c, "WHERE id = @id", new { id }).SingleOrDefault();
+
+    // Cards with their labels (ids and names) and comment counts. `where` filters the cards table.
+    private static List<Card> LoadCards(SqliteConnection c, string where, object? args)
     {
-        var row = c.QuerySingleOrDefault<CardRow>($"SELECT {CardColumns} FROM cards WHERE id = @id", new { id });
-        if (row is null) return null;
-        var labelIds = c.Query<long>(
-            "SELECT label_id FROM card_labels WHERE card_id = @id ORDER BY label_id", new { id }).ToList();
-        return ToCard(row, labelIds);
+        var rows = c.Query<CardRow>($"SELECT {CardColumns} FROM cards {where}", args).ToList();
+        if (rows.Count == 0) return [];
+        var ids = rows.Select(r => r.Id).ToList();
+        var links = c.Query<(long CardId, long LabelId, string Name)>(
+                """
+                SELECT cl.card_id, cl.label_id, l.name
+                FROM card_labels cl JOIN labels l ON l.id = cl.label_id
+                WHERE cl.card_id IN @ids
+                ORDER BY cl.label_id
+                """, new { ids })
+            .ToLookup(l => l.CardId);
+        var comments = c.Query<(long CardId, long Count)>(
+                "SELECT card_id, COUNT(*) FROM comments WHERE card_id IN @ids GROUP BY card_id", new { ids })
+            .ToDictionary(x => x.CardId, x => (int)x.Count);
+        return
+        [
+            .. rows.Select(r => ToCard(
+                r,
+                [.. links[r.Id].Select(l => l.LabelId)],
+                [.. links[r.Id].Select(l => l.Name)],
+                comments.GetValueOrDefault(r.Id))),
+        ];
     }
 
     private string Now() => time.GetUtcNow().ToString("O", CultureInfo.InvariantCulture);
@@ -218,7 +311,7 @@ public sealed class BoardStore(Database db, TimeProvider time)
     private static DateTimeOffset ParseTime(string value) =>
         DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
 
-    private static Card ToCard(CardRow r, IReadOnlyList<long> labelIds) => new(
+    private static Card ToCard(CardRow r, IReadOnlyList<long> labelIds, IReadOnlyList<string> labels, int comments) => new(
         r.Id,
         r.Title,
         r.Description,
@@ -229,7 +322,9 @@ public sealed class BoardStore(Database db, TimeProvider time)
         labelIds,
         ParseTime(r.CreatedAt),
         ParseTime(r.UpdatedAt),
-        r.CompletedAt is null ? null : ParseTime(r.CompletedAt));
+        r.CompletedAt is null ? null : ParseTime(r.CompletedAt),
+        labels,
+        comments);
 
     private static Label ToLabel(LabelRow r) => new(r.Id, r.Name, r.Color);
 

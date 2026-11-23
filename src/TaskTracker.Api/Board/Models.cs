@@ -20,18 +20,28 @@ public sealed record Card(
     IReadOnlyList<long> LabelIds,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    DateTimeOffset? CompletedAt);
+    DateTimeOffset? CompletedAt,
+    // The labels' names, in the same order as LabelIds.
+    IReadOnlyList<string> Labels,
+    int CommentCount);
+
+public sealed record Comment(long Id, long CardId, string Author, string Body, DateTimeOffset CreatedAt);
 
 /// <summary>Everything the board page shows, in one response.</summary>
 public sealed record BoardView(IReadOnlyList<Column> Columns, IReadOnlyList<Card> Cards, IReadOnlyList<Label> Labels);
 
+/// <summary>
+/// A new card. Labels can be given by id (<see cref="LabelIds"/>) or by name (<see cref="Labels"/>,
+/// made if they don't exist yet), or both.
+/// </summary>
 public sealed record CreateCardRequest(
     string? Title,
     string? Description = null,
     CardStatus? Status = null,
     Priority? Priority = null,
     string? DueDate = null,
-    long[]? LabelIds = null);
+    long[]? LabelIds = null,
+    string[]? Labels = null);
 
 /// <summary>Replaces a card's editable fields. Its column and order change through a move.</summary>
 public sealed record UpdateCardRequest(
@@ -45,6 +55,8 @@ public sealed record UpdateCardRequest(
 public sealed record MoveCardRequest(CardStatus? Status, int? Index = null);
 
 public sealed record LabelRequest(string? Name, string? Color);
+
+public sealed record CommentRequest(string? Body, string? Author = null);
 
 public static class BoardColumns
 {
@@ -85,5 +97,7 @@ internal static class Codes
     public static string Code(this CardStatus status) => StatusCodes[status];
     public static string Code(this Priority priority) => PriorityCodes[priority];
     public static CardStatus ParseStatus(string code) => Statuses[code];
+    public static bool TryParseStatus(string code, out CardStatus status) => Statuses.TryGetValue(code, out status);
+    public static bool TryParsePriority(string code, out Priority priority) => Priorities.TryGetValue(code, out priority);
     public static Priority ParsePriority(string code) => Priorities[code];
 }

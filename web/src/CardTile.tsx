@@ -15,7 +15,7 @@ export function CardTile({ card, labels, overlay }: Props) {
   const done = card.status === "done" ? completedText(card) : null;
   const tasks = checklist(card.description);
   const cardLabels = card.labelIds.map((id) => labels.get(id)).filter((l): l is Label => !!l);
-  const hasFooter = due || done || tasks || (card.description.trim() && !tasks);
+  const hasFooter = due || done || tasks || card.commentCount > 0 || (card.description.trim() && !tasks);
 
   return (
     <div className={`card-tile${overlay ? " overlay" : ""}`} data-priority={card.priority}>
@@ -38,6 +38,11 @@ export function CardTile({ card, labels, overlay }: Props) {
           {tasks && (
             <span className={`tasks${tasks.done === tasks.total ? " all" : ""}`} title="Checklist items done">
               ☑ {tasks.done}/{tasks.total}
+            </span>
+          )}
+          {card.commentCount > 0 && (
+            <span className="comments" title="Comments">
+              {card.commentCount === 1 ? "1 comment" : `${card.commentCount} comments`}
             </span>
           )}
           {!tasks && card.description.trim() && (
