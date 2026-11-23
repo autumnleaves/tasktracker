@@ -26,12 +26,13 @@ public sealed class BoardApiTests : IDisposable
     }
 
     [Fact]
-    public async Task An_empty_board_has_the_four_columns()
+    public async Task An_empty_board_has_the_five_columns()
     {
         var board = await _app.Board();
         Assert.Equal(
-            new[] { CardStatus.Backlog, CardStatus.Todo, CardStatus.InProgress, CardStatus.Done },
+            new[] { CardStatus.Backlog, CardStatus.Todo, CardStatus.InProgress, CardStatus.InReview, CardStatus.Done },
             board.Columns.Select(c => c.Id));
+        Assert.Equal("In review", board.Columns[3].Name);
         Assert.Empty(board.Cards);
     }
 
@@ -120,6 +121,22 @@ public sealed class BoardApiTests : IDisposable
 
         var reopened = await _app.Move(card.Id, "todo");
         Assert.Null(reopened.CompletedAt);
+    }
+
+    [Fact]
+    public async Task In_review_sits_between_in_progress_and_done_and_isnt_finished()
+    {
+        var done = await _app.Create(new { title = "Shipped", status = "done" });
+        var reviewing = await _app.Create(new { title = "Reviewing", status = "in_review" });
+        var working = await _app.Create(new { title = "Working", status = "in_progress" });
+
+        Assert.Equal(new[] { working.Id, reviewing.Id, done.Id }, (await _app.Board()).Cards.Select(c => c.Id));
+        Assert.Contains("\"status\":\"in_review\"", await _client.GetStringAsync($"/api/cards/{reviewing.Id}"));
+        Assert.Null(reviewing.CompletedAt);
+
+        var reopened = await _app.Move(done.Id, "in_review");
+        Assert.Null(reopened.CompletedAt);
+        Assert.Equal(new long[] { reviewing.Id, done.Id }, await _app.ColumnOrder(CardStatus.InReview));
     }
 
     [Fact]

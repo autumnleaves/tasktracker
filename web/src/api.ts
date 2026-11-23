@@ -1,10 +1,10 @@
 // The task tracker API (src/TaskTracker.Api). Always same-origin under /api: the API serves this
 // app in production, and Vite's dev server proxies /api to it in development.
 
-export type Status = "backlog" | "todo" | "in_progress" | "done";
+export type Status = "backlog" | "todo" | "in_progress" | "in_review" | "done";
 export type Priority = "low" | "medium" | "high" | "urgent";
 
-export const STATUSES: Status[] = ["backlog", "todo", "in_progress", "done"];
+export const STATUSES: Status[] = ["backlog", "todo", "in_progress", "in_review", "done"];
 export const PRIORITIES: Priority[] = ["urgent", "high", "medium", "low"];
 export const PRIORITY_NAMES: Record<Priority, string> = {
   urgent: "Urgent",

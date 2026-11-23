@@ -1,6 +1,6 @@
 # tasktracker
 
-Tom's own task board, like a one-person Jira: cards in four columns (Backlog, To do, In progress, Done), dragged between them. Cards have a title, a Markdown description (with `- [ ]` checklists you can tick on the card), a priority, a due date, labels, and a project: the bigger piece of work they're part of. One small container on `cargoship`, deployed by GitHub Actions on every push to `main` with [pie-delivery](https://github.com/autumnleaves/pie-delivery)'s Compose action. The rest of the homelab is described in [homelab-config](https://github.com/autumnleaves/homelab-config/blob/main/README.md).
+Tom's own task board, like a one-person Jira: cards in five columns (Backlog, To do, In progress, In review, Done), dragged between them. Cards have a title, a Markdown description (with `- [ ]` checklists you can tick on the card), a priority, a due date, labels, and a project: the bigger piece of work they're part of. One small container on `cargoship`, deployed by GitHub Actions on every push to `main` with [pie-delivery](https://github.com/autumnleaves/pie-delivery)'s Compose action. The rest of the homelab is described in [homelab-config](https://github.com/autumnleaves/homelab-config/blob/main/README.md).
 
 At [`https://tasktracker.autumnleaves.net`](https://tasktracker.autumnleaves.net), through a Cloudflare Tunnel, with a basic-auth login (the browser asks about once a month; Claude sends it). At home and on the tailnet it's also at `http://cargoship:5280` (`http://192.168.1.11:5280`), with no login.
 
@@ -36,7 +36,7 @@ At [`https://tasktracker.autumnleaves.net`](https://tasktracker.autumnleaves.net
 
 ## API
 
-JSON under `/api`. Statuses are `backlog`, `todo`, `in_progress`, `done`; priorities `low`, `medium`, `high`, `urgent`; due dates `yyyy-MM-dd`. Validation errors are `400` problem details with an `errors` object per field.
+JSON under `/api`. Statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`; priorities `low`, `medium`, `high`, `urgent`; due dates `yyyy-MM-dd`. Validation errors are `400` problem details with an `errors` object per field.
 
 | Method and path | What |
 | --- | --- |
