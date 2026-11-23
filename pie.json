@@ -1,0 +1,7 @@
+{
+  "projects": ["stack"],
+  "health": [{ "network": "tasktracker_default", "url": "http://tasktracker:8080/api/health" }],
+  "dirs": [{ "path": "data", "owner": "1654:1654", "mode": "750" }],
+  "keep": 3,
+  "timeout": 60
+}

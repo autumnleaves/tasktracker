@@ -1,6 +1,6 @@
 # tasktracker
 
-Tom's own task board, like a one-person Jira: cards in four columns (Backlog, To do, In progress, Done), dragged between them. Cards have a title, a Markdown description (with `- [ ]` checklists you can tick on the card), a priority, a due date and labels. One small container on `cargoship`, deployed by GitHub Actions on every push to `main`, like [homelab-media](https://github.com/autumnleaves/homelab-media). The rest of the homelab is described in [homelab-config](https://github.com/autumnleaves/homelab-config/blob/main/README.md).
+Tom's own task board, like a one-person Jira: cards in four columns (Backlog, To do, In progress, Done), dragged between them. Cards have a title, a Markdown description (with `- [ ]` checklists you can tick on the card), a priority, a due date and labels. One small container on `cargoship`, deployed by GitHub Actions on every push to `main` with [pie-delivery](https://github.com/autumnleaves/pie-delivery)'s Compose action. The rest of the homelab is described in [homelab-config](https://github.com/autumnleaves/homelab-config/blob/main/README.md).
 
 At [`https://tasktracker.autumnleaves.net`](https://tasktracker.autumnleaves.net) through homelab-media's Caddy proxy, or `http://cargoship:5280` (`http://192.168.1.11:5280` at home). Both work at home and over Tailscale; nothing is exposed to the internet, and there's no login.
 
@@ -9,7 +9,7 @@ At [`https://tasktracker.autumnleaves.net`](https://tasktracker.autumnleaves.net
                                                                     ├─ /api/*  the API (.NET 10)
                                                                     └─ /*      the web app (React)
                                                                          │
-                                                        /opt/tasktracker/data/tasks.db (SQLite)
+                                                   /opt/apps/tasktracker/data/tasks.db (SQLite)
 ```
 
 ## Using it
@@ -30,7 +30,7 @@ At [`https://tasktracker.autumnleaves.net`](https://tasktracker.autumnleaves.net
 | [`web/`](web) | The web app: React, TypeScript, Vite, dnd-kit for drag and drop |
 | [`Dockerfile`](Dockerfile) | One image: the API serving the built web app |
 | [`stack/`](stack/compose.yaml) | The Compose project on `cargoship` and its settings |
-| [`deploy/`](deploy/activate.sh), [`docs/deploy.md`](docs/deploy.md) | CI deploys to `cargoship`: one-time setup, per-release activation, rollback |
+| [`pie.json`](pie.json), [`docs/deploy.md`](docs/deploy.md) | How pie-delivery deploys it: the health check, the data folder, rollback |
 
 ## API
 
@@ -49,7 +49,7 @@ Card numbers are never reused, even after a delete.
 
 ## Data
 
-One SQLite file, `/opt/tasktracker/data/tasks.db` on `cargoship`, mounted into the container at `/data`. It's on `cargoship`'s own disk, so the weekly VM backup covers it. Before the app applies a schema migration to an existing database, it copies it to `data/backups/tasks-v<old version>-<time>.db`.
+One SQLite file, `/opt/apps/tasktracker/data/tasks.db` on `cargoship`, mounted into the container at `/data`. It's on `cargoship`'s own disk, so the weekly VM backup covers it. Before the app applies a schema migration to an existing database, it copies it to `data/backups/tasks-v<old version>-<time>.db`.
 
 Migrations should only add things (tables, nullable columns): a failed deploy rolls back to the previous release, which then runs against the newer schema.
 
@@ -67,6 +67,6 @@ CI ([`deploy.yml`](.github/workflows/deploy.yml)) runs the tests, type-checks an
 
 ## Status
 
-Built, not deployed yet: the one-time setup in [docs/deploy.md](docs/deploy.md) is still to do (deploy key, secrets, `setup.sh` on `cargoship`). The proxy name comes from homelab-media's Caddyfile and its wildcard DNS record.
+Running on `cargoship`, deployed with pie-delivery v2. The proxy name comes from homelab-media's Caddyfile and its wildcard DNS record.
 
 **Later:** the web app on Cloudflare Pages at `tasktracker.autumnleaves.net`, behind Cloudflare Access, with the API reached through a Cloudflare Tunnel behind the same Access application. The web app already calls only same-origin `/api`, so that's routing plus the API checking Access's token (`Cf-Access-Jwt-Assertion`), not a rewrite.
