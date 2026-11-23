@@ -11,8 +11,8 @@ namespace TaskTracker.Api.Data;
 /// Migrations are the embedded <c>Data/Migrations/NNNN_name.sql</c> scripts, applied in order.
 /// The applied version is SQLite's <c>user_version</c>. Before migrating an existing database,
 /// a copy goes to <c>backups/</c> next to it, so a bad migration can be undone by hand.
-/// Keep migrations additive (new tables and nullable columns): a rollback runs the previous
-/// release against the newer schema.
+/// Prefer additive migrations (new tables and nullable columns), and keep the columns the
+/// previous release reads: a failed deploy rolls back to it, on the newer schema.
 /// Migrations run with foreign keys off, so one can rebuild a table the way SQLite documents
 /// (copy it, drop the old one, rename) without the drop cascading to the rows that point at it;
 /// a migration that leaves a broken reference is rolled back.
