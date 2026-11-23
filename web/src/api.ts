@@ -24,6 +24,13 @@ export interface Label {
   color: string;
 }
 
+/** An overarching piece of work. Each card belongs to at most one. */
+export interface Project {
+  id: number;
+  name: string;
+  color: string;
+}
+
 export interface Card {
   id: number;
   title: string;
@@ -40,6 +47,9 @@ export interface Card {
   /** The labels' names, in labelIds order. */
   labels: string[];
   commentCount: number;
+  projectId: number | null;
+  /** The project's name, or null. */
+  project: string | null;
 }
 
 export interface Comment {
@@ -54,6 +64,7 @@ export interface Board {
   columns: Column[];
   cards: Card[];
   labels: Label[];
+  projects: Project[];
 }
 
 /** The fields a card's editor changes. Its column and order change through a move. */
@@ -63,6 +74,7 @@ export interface CardFields {
   priority: Priority;
   dueDate: string | null;
   labelIds: number[];
+  projectId: number | null;
 }
 
 export class ApiError extends Error {
@@ -120,6 +132,10 @@ export const api = {
   updateLabel: (id: number, name: string, color: string) =>
     request<Label>("PUT", `/labels/${id}`, { name, color }),
   deleteLabel: (id: number) => request<void>("DELETE", `/labels/${id}`),
+  createProject: (name: string, color: string) => request<Project>("POST", "/projects", { name, color }),
+  updateProject: (id: number, name: string, color: string) =>
+    request<Project>("PUT", `/projects/${id}`, { name, color }),
+  deleteProject: (id: number) => request<void>("DELETE", `/projects/${id}`),
   comments: (cardId: number) => request<Comment[]>("GET", `/cards/${cardId}/comments`),
   addComment: (cardId: number, body: string) =>
     request<Comment>("POST", `/cards/${cardId}/comments`, { body, author: "Tom" }),

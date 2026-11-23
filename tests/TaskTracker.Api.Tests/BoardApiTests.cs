@@ -229,6 +229,60 @@ public sealed class BoardApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Updating_sets_and_clears_the_project()
+    {
+        var project = await _app.CreateProject("Homelab");
+        var card = await _app.Create(new { title = "Tunnel" });
+        Assert.Null(card.ProjectId);
+
+        var response = await _client.PutAsJsonAsync($"/api/cards/{card.Id}", new { title = "Tunnel", projectId = project.Id }, TestApp.Json);
+        var updated = (await response.Content.ReadFromJsonAsync<Card>(TestApp.Json))!;
+        Assert.Equal(project.Id, updated.ProjectId);
+        Assert.Equal("Homelab", updated.Project);
+
+        response = await _client.PutAsJsonAsync($"/api/cards/{card.Id}", new { title = "Tunnel" }, TestApp.Json);
+        Assert.Null((await response.Content.ReadFromJsonAsync<Card>(TestApp.Json))!.ProjectId);
+
+        response = await _client.PutAsJsonAsync($"/api/cards/{card.Id}", new { title = "Tunnel", projectId = 999 }, TestApp.Json);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Project_names_are_unique_ignoring_case_and_can_be_renamed()
+    {
+        var project = await _app.CreateProject("Homlab");
+        var response = await _client.PostAsJsonAsync("/api/projects", new { name = "homlab", color = "#123456" }, TestApp.Json);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        response = await _client.PostAsJsonAsync("/api/projects", new { name = "", color = "#123456" }, TestApp.Json);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var card = await _app.Create(new { title = "Tunnel", projectId = project.Id });
+        response = await _client.PutAsJsonAsync($"/api/projects/{project.Id}", new { name = "Homelab", color = "#ABCDEF" }, TestApp.Json);
+        var renamed = (await response.Content.ReadFromJsonAsync<Project>(TestApp.Json))!;
+        Assert.Equal("Homelab", renamed.Name);
+        Assert.Equal("#abcdef", renamed.Color);
+        Assert.Equal("Homelab", (await _client.GetFromJsonAsync<Card>($"/api/cards/{card.Id}", TestApp.Json))!.Project);
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await _client.PutAsJsonAsync("/api/projects/999", new { name = "x", color = "#123456" }, TestApp.Json)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Deleting_a_project_keeps_its_cards_without_one()
+    {
+        var project = await _app.CreateProject("Abandoned");
+        var card = await _app.Create(new { title = "Orphan", projectId = project.Id });
+
+        Assert.Equal(HttpStatusCode.NoContent, (await _client.DeleteAsync($"/api/projects/{project.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await _client.DeleteAsync($"/api/projects/{project.Id}")).StatusCode);
+
+        var reloaded = await _client.GetFromJsonAsync<Card>($"/api/cards/{card.Id}", TestApp.Json);
+        Assert.Null(reloaded!.ProjectId);
+        Assert.Null(reloaded.Project);
+        Assert.Empty((await _app.Board()).Projects);
+    }
+
+    [Fact]
     public async Task Unknown_api_routes_are_404s()
     {
         Assert.Equal(HttpStatusCode.NotFound, (await _client.GetAsync("/api/nope")).StatusCode);

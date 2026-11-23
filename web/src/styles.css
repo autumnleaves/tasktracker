@@ -243,6 +243,54 @@ textarea {
   font-weight: 600;
 }
 
+/* The project filter: a chip that opens a list of projects to tick. */
+.project-filter {
+  position: relative;
+}
+
+.project-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.project-button[aria-pressed="true"] {
+  border-color: var(--project, var(--ink));
+}
+
+.project-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--project);
+}
+
+.caret {
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+.project-filter .popover {
+  width: 260px;
+}
+
+.project-filter .popover > button {
+  margin-top: 6px;
+}
+
+.popover-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.no-project {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
 .topbar-actions {
   display: flex;
   gap: 8px;
@@ -423,9 +471,50 @@ textarea {
   font-size: 12px;
 }
 
+.card-ident {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .card-number {
+  flex: none;
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
+}
+
+/* A project's name in its colour, after a dot: on cards and in the project filter. */
+.project-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 650;
+  color: color-mix(in srgb, var(--project) 80%, var(--ink));
+}
+
+.project-tag::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--project);
+}
+
+.card-ident .project-tag {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.card-ident .project-tag::before {
+  display: inline-block;
+  margin-right: 5px;
+  vertical-align: 0;
 }
 
 .priority {
@@ -636,6 +725,25 @@ textarea {
   color: var(--ink);
   width: 100%;
   min-width: 0;
+}
+
+.panel-fields .project-field {
+  grid-column: 1 / -1;
+}
+
+.project-new {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-new-row {
+  display: flex;
+  gap: 4px;
+}
+
+.project-new-row input {
+  flex: 1;
 }
 
 .due-input {

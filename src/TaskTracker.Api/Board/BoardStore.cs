@@ -7,15 +7,18 @@ namespace TaskTracker.Api.Board;
 
 public enum Outcome { Ok, NotFound, NameTaken }
 
-/// <summary>Reads and writes cards and labels. Callers validate input first (BoardApi).</summary>
+/// <summary>Reads and writes cards, labels and projects. Callers validate input first (BoardApi).</summary>
 public sealed class BoardStore(Database db, TimeProvider time)
 {
     private const string CardColumns =
         "id AS Id, title AS Title, description AS Description, status AS Status, priority AS Priority, " +
         "due_date AS DueDate, position AS Position, created_at AS CreatedAt, updated_at AS UpdatedAt, " +
-        "completed_at AS CompletedAt";
+        "completed_at AS CompletedAt, project_id AS ProjectId";
 
-    private const string LabelColumns = "id AS Id, name AS Name, color AS Color";
+    // Labels and projects are both a name (unique, ignoring case) and a colour, in these tables.
+    private const string LabelsTable = "labels";
+    private const string ProjectsTable = "projects";
+    private const string NamedColumns = "id AS Id, name AS Name, color AS Color";
 
     private const int SqliteConstraint = 19;
 
@@ -33,8 +36,8 @@ public sealed class BoardStore(Database db, TimeProvider time)
             .ThenBy(card => card.Position)
             .ThenBy(card => card.Id)
             .ToList();
-        var labels = c.Query<LabelRow>($"SELECT {LabelColumns} FROM labels ORDER BY name").Select(ToLabel).ToList();
-        return new BoardView(BoardColumns.All, cards, labels);
+        return new BoardView(
+            BoardColumns.All, cards, ListNamed(c, LabelsTable, ToLabel), ListNamed(c, ProjectsTable, ToProject));
     }
 
     public Card? GetCard(long id)
@@ -53,10 +56,16 @@ public sealed class BoardStore(Database db, TimeProvider time)
         return [.. wanted.Where(id => !found.Contains(id))];
     }
 
+    public bool ProjectExists(long id)
+    {
+        using var c = db.Open();
+        return c.ExecuteScalar<long>("SELECT COUNT(*) FROM projects WHERE id = @id", new { id }) > 0;
+    }
+
     /// <summary>Adds a card at the bottom of its column.</summary>
     public Card CreateCard(
         string title, string description, CardStatus status, Priority priority, string? dueDate,
-        IReadOnlyCollection<long> labelIds)
+        IReadOnlyCollection<long> labelIds, long? projectId)
     {
         using var c = db.Open();
         using var tx = c.BeginTransaction();
@@ -66,8 +75,8 @@ public sealed class BoardStore(Database db, TimeProvider time)
             new { status = status.Code() }, tx);
         var id = c.ExecuteScalar<long>(
             """
-            INSERT INTO cards (title, description, status, priority, due_date, position, created_at, updated_at, completed_at)
-            VALUES (@title, @description, @status, @priority, @dueDate, @position, @now, @now, @completedAt)
+            INSERT INTO cards (title, description, status, priority, due_date, position, created_at, updated_at, completed_at, project_id)
+            VALUES (@title, @description, @status, @priority, @dueDate, @position, @now, @now, @completedAt, @projectId)
             RETURNING id
             """,
             new
@@ -80,6 +89,7 @@ public sealed class BoardStore(Database db, TimeProvider time)
                 position,
                 now,
                 completedAt = status == CardStatus.Done ? now : null,
+                projectId,
             },
             tx);
         SetLabels(c, tx, id, labelIds);
@@ -89,17 +99,18 @@ public sealed class BoardStore(Database db, TimeProvider time)
 
     public Card? UpdateCard(
         long id, string title, string description, Priority priority, string? dueDate,
-        IReadOnlyCollection<long> labelIds)
+        IReadOnlyCollection<long> labelIds, long? projectId)
     {
         using var c = db.Open();
         using var tx = c.BeginTransaction();
         var updated = c.Execute(
             """
             UPDATE cards
-            SET title = @title, description = @description, priority = @priority, due_date = @dueDate, updated_at = @now
+            SET title = @title, description = @description, priority = @priority, due_date = @dueDate,
+                project_id = @projectId, updated_at = @now
             WHERE id = @id
             """,
-            new { id, title, description, priority = priority.Code(), dueDate, now = Now() },
+            new { id, title, description, priority = priority.Code(), dueDate, projectId, now = Now() },
             tx);
         if (updated == 0) return null;
         SetLabels(c, tx, id, labelIds);
@@ -153,50 +164,84 @@ public sealed class BoardStore(Database db, TimeProvider time)
     public IReadOnlyList<Label> GetLabels()
     {
         using var c = db.Open();
-        return [.. c.Query<LabelRow>($"SELECT {LabelColumns} FROM labels ORDER BY name").Select(ToLabel)];
+        return ListNamed(c, LabelsTable, ToLabel);
     }
 
-    public (Outcome, Label?) CreateLabel(string name, string color)
-    {
-        using var c = db.Open();
-        try
-        {
-            var id = c.ExecuteScalar<long>(
-                "INSERT INTO labels (name, color) VALUES (@name, @color) RETURNING id", new { name, color });
-            return (Outcome.Ok, new Label(id, name, color));
-        }
-        catch (SqliteException e) when (e.SqliteErrorCode == SqliteConstraint)
-        {
-            return (Outcome.NameTaken, null);
-        }
-    }
+    public (Outcome, Label?) CreateLabel(string name, string color) => CreateNamed(LabelsTable, name, color, ToLabel);
 
-    public (Outcome, Label?) UpdateLabel(long id, string name, string color)
-    {
-        using var c = db.Open();
-        try
-        {
-            var updated = c.Execute(
-                "UPDATE labels SET name = @name, color = @color WHERE id = @id", new { id, name, color });
-            return updated == 0 ? (Outcome.NotFound, null) : (Outcome.Ok, new Label(id, name, color));
-        }
-        catch (SqliteException e) when (e.SqliteErrorCode == SqliteConstraint)
-        {
-            return (Outcome.NameTaken, null);
-        }
-    }
+    public (Outcome, Label?) UpdateLabel(long id, string name, string color) =>
+        UpdateNamed(LabelsTable, id, name, color, ToLabel);
 
-    public bool DeleteLabel(long id)
-    {
-        using var c = db.Open();
-        return c.Execute("DELETE FROM labels WHERE id = @id", new { id }) > 0;
-    }
+    public bool DeleteLabel(long id) => DeleteNamed(LabelsTable, id);
 
     /// <summary>
     /// The ids of labels with these names (ignoring case), making any that don't exist yet with
     /// the next unused colour.
     /// </summary>
-    public IReadOnlyList<long> LabelIdsByName(IEnumerable<string> names)
+    public IReadOnlyList<long> LabelIdsByName(IEnumerable<string> names) => IdsByName(LabelsTable, names);
+
+    public IReadOnlyList<Project> GetProjects()
+    {
+        using var c = db.Open();
+        return ListNamed(c, ProjectsTable, ToProject);
+    }
+
+    public (Outcome, Project?) CreateProject(string name, string color) => CreateNamed(ProjectsTable, name, color, ToProject);
+
+    public (Outcome, Project?) UpdateProject(long id, string name, string color) =>
+        UpdateNamed(ProjectsTable, id, name, color, ToProject);
+
+    /// <summary>Deletes a project; its cards are left without one.</summary>
+    public bool DeleteProject(long id) => DeleteNamed(ProjectsTable, id);
+
+    /// <summary>The id of the project with this name (ignoring case), made with the next unused colour if new.</summary>
+    public long ProjectIdByName(string name) => IdsByName(ProjectsTable, [name]).Single();
+
+    // `table` is always LabelsTable or ProjectsTable, never input.
+    private static List<T> ListNamed<T>(SqliteConnection c, string table, Func<NamedRow, T> make) =>
+        [.. c.Query<NamedRow>($"SELECT {NamedColumns} FROM {table} ORDER BY name").Select(make)];
+
+    private (Outcome, T?) CreateNamed<T>(string table, string name, string color, Func<NamedRow, T> make)
+        where T : class
+    {
+        using var c = db.Open();
+        try
+        {
+            var id = c.ExecuteScalar<long>(
+                $"INSERT INTO {table} (name, color) VALUES (@name, @color) RETURNING id", new { name, color });
+            return (Outcome.Ok, make(new NamedRow { Id = id, Name = name, Color = color }));
+        }
+        catch (SqliteException e) when (e.SqliteErrorCode == SqliteConstraint)
+        {
+            return (Outcome.NameTaken, null);
+        }
+    }
+
+    private (Outcome, T?) UpdateNamed<T>(string table, long id, string name, string color, Func<NamedRow, T> make)
+        where T : class
+    {
+        using var c = db.Open();
+        try
+        {
+            var updated = c.Execute(
+                $"UPDATE {table} SET name = @name, color = @color WHERE id = @id", new { id, name, color });
+            return updated == 0
+                ? (Outcome.NotFound, null)
+                : (Outcome.Ok, make(new NamedRow { Id = id, Name = name, Color = color }));
+        }
+        catch (SqliteException e) when (e.SqliteErrorCode == SqliteConstraint)
+        {
+            return (Outcome.NameTaken, null);
+        }
+    }
+
+    private bool DeleteNamed(string table, long id)
+    {
+        using var c = db.Open();
+        return c.Execute($"DELETE FROM {table} WHERE id = @id", new { id }) > 0;
+    }
+
+    private IReadOnlyList<long> IdsByName(string table, IEnumerable<string> names)
     {
         using var c = db.Open();
         using var tx = c.BeginTransaction();
@@ -204,13 +249,13 @@ public sealed class BoardStore(Database db, TimeProvider time)
         foreach (var name in names.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var id = c.QuerySingleOrDefault<long?>(
-                "SELECT id FROM labels WHERE name = @name COLLATE NOCASE", new { name }, tx);
+                $"SELECT id FROM {table} WHERE name = @name COLLATE NOCASE", new { name }, tx);
             if (id is null)
             {
-                var used = c.Query<string>("SELECT color FROM labels", transaction: tx).ToHashSet();
-                var color = LabelColors.FirstOrDefault(col => !used.Contains(col)) ?? LabelColors[used.Count % LabelColors.Length];
+                var used = c.Query<string>($"SELECT color FROM {table}", transaction: tx).ToHashSet();
+                var color = Palette.FirstOrDefault(col => !used.Contains(col)) ?? Palette[used.Count % Palette.Length];
                 id = c.ExecuteScalar<long>(
-                    "INSERT INTO labels (name, color) VALUES (@name, @color) RETURNING id", new { name, color }, tx);
+                    $"INSERT INTO {table} (name, color) VALUES (@name, @color) RETURNING id", new { name, color }, tx);
             }
             ids.Add(id.Value);
         }
@@ -218,8 +263,8 @@ public sealed class BoardStore(Database db, TimeProvider time)
         return ids;
     }
 
-    // The web app's label palette (web/src/LabelChip.tsx), for labels made by name.
-    private static readonly string[] LabelColors =
+    // The web app's palette (web/src/LabelChip.tsx), for labels and projects made by name.
+    private static readonly string[] Palette =
         ["#3d6fa8", "#2f8f6b", "#b4690e", "#8a4fb5", "#c8323c", "#3f8a9c", "#7d6b22", "#66707a"];
 
     /// <summary>A card's comments, oldest first, or null if there's no such card.</summary>
@@ -279,7 +324,7 @@ public sealed class BoardStore(Database db, TimeProvider time)
     private static Card? Load(SqliteConnection c, long id) =>
         LoadCards(c, "WHERE id = @id", new { id }).SingleOrDefault();
 
-    // Cards with their labels (ids and names) and comment counts. `where` filters the cards table.
+    // Cards with their labels (ids and names), comment counts and project names. `where` filters the cards table.
     private static List<Card> LoadCards(SqliteConnection c, string where, object? args)
     {
         var rows = c.Query<CardRow>($"SELECT {CardColumns} FROM cards {where}", args).ToList();
@@ -296,13 +341,19 @@ public sealed class BoardStore(Database db, TimeProvider time)
         var comments = c.Query<(long CardId, long Count)>(
                 "SELECT card_id, COUNT(*) FROM comments WHERE card_id IN @ids GROUP BY card_id", new { ids })
             .ToDictionary(x => x.CardId, x => (int)x.Count);
+        var projectIds = rows.Where(r => r.ProjectId is not null).Select(r => r.ProjectId!.Value).Distinct().ToList();
+        var projects = projectIds.Count == 0
+            ? []
+            : c.Query<(long Id, string Name)>("SELECT id, name FROM projects WHERE id IN @projectIds", new { projectIds })
+                .ToDictionary(p => p.Id, p => p.Name);
         return
         [
             .. rows.Select(r => ToCard(
                 r,
                 [.. links[r.Id].Select(l => l.LabelId)],
                 [.. links[r.Id].Select(l => l.Name)],
-                comments.GetValueOrDefault(r.Id))),
+                comments.GetValueOrDefault(r.Id),
+                r.ProjectId is { } pid ? projects.GetValueOrDefault(pid) : null)),
         ];
     }
 
@@ -311,7 +362,8 @@ public sealed class BoardStore(Database db, TimeProvider time)
     private static DateTimeOffset ParseTime(string value) =>
         DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
 
-    private static Card ToCard(CardRow r, IReadOnlyList<long> labelIds, IReadOnlyList<string> labels, int comments) => new(
+    private static Card ToCard(
+        CardRow r, IReadOnlyList<long> labelIds, IReadOnlyList<string> labels, int comments, string? project) => new(
         r.Id,
         r.Title,
         r.Description,
@@ -324,9 +376,13 @@ public sealed class BoardStore(Database db, TimeProvider time)
         ParseTime(r.UpdatedAt),
         r.CompletedAt is null ? null : ParseTime(r.CompletedAt),
         labels,
-        comments);
+        comments,
+        project is null ? null : r.ProjectId,
+        project);
 
-    private static Label ToLabel(LabelRow r) => new(r.Id, r.Name, r.Color);
+    private static Label ToLabel(NamedRow r) => new(r.Id, r.Name, r.Color);
+
+    private static Project ToProject(NamedRow r) => new(r.Id, r.Name, r.Color);
 
     private sealed class CardRow
     {
@@ -340,9 +396,10 @@ public sealed class BoardStore(Database db, TimeProvider time)
         public string CreatedAt { get; init; } = "";
         public string UpdatedAt { get; init; } = "";
         public string? CompletedAt { get; init; }
+        public long? ProjectId { get; init; }
     }
 
-    private sealed class LabelRow
+    private sealed class NamedRow
     {
         public long Id { get; init; }
         public string Name { get; init; } = "";

@@ -59,6 +59,13 @@ public sealed class TestApp : WebApplicationFactory<Program>
         return (await response.Content.ReadFromJsonAsync<Label>(Json))!;
     }
 
+    public async Task<Project> CreateProject(string name, string color = "#3d6fa8")
+    {
+        var response = await CreateClient().PostAsJsonAsync("/api/projects", new { name, color }, Json);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<Project>(Json))!;
+    }
+
     public async Task<IReadOnlyList<long>> ColumnOrder(CardStatus status) =>
         [.. (await Board()).Cards.Where(c => c.Status == status).Select(c => c.Id)];
 
