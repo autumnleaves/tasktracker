@@ -37,6 +37,17 @@ export interface Card {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  /** The labels' names, in labelIds order. */
+  labels: string[];
+  commentCount: number;
+}
+
+export interface Comment {
+  id: number;
+  cardId: number;
+  author: string;
+  body: string;
+  createdAt: string;
 }
 
 export interface Board {
@@ -109,6 +120,10 @@ export const api = {
   updateLabel: (id: number, name: string, color: string) =>
     request<Label>("PUT", `/labels/${id}`, { name, color }),
   deleteLabel: (id: number) => request<void>("DELETE", `/labels/${id}`),
+  comments: (cardId: number) => request<Comment[]>("GET", `/cards/${cardId}/comments`),
+  addComment: (cardId: number, body: string) =>
+    request<Comment>("POST", `/cards/${cardId}/comments`, { body, author: "Tom" }),
+  deleteComment: (id: number) => request<void>("DELETE", `/comments/${id}`),
 };
 
 export function errorMessage(error: unknown): string {

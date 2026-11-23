@@ -9,6 +9,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(
         new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower, allowIntegerValues: false)));
 builder.Services.AddProblemDetails();
+builder.Services.AddOpenApi();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(sp => new Database(
     sp.GetRequiredService<IConfiguration>().GetConnectionString("Tasks")
@@ -32,6 +33,8 @@ app.UseStatusCodePages();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+// The API's description, for tools and agents: /api/openapi.json.
+app.MapOpenApi("/api/openapi.json");
 app.MapGroup("/api").MapBoardApi();
 app.MapFallbackToFile("index.html");
 

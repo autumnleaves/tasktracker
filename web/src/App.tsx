@@ -296,6 +296,7 @@ export function App() {
             setPanel(null);
           }}
           onCreateLabel={(name) => createLabel(name)}
+          onCommentsChange={() => void refresh()}
         />
       )}
       {labelsOpen && (

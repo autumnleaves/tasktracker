@@ -43,7 +43,7 @@ jobs:
         run: |
           cp stack/.env.example stack/.env
           printf 'APP_ROOT=/opt/apps/tasktracker\nRELEASE=check\n' >>stack/.env
-          (cd stack && docker compose config -q)
+          (cd stack && docker compose config -q && COMPOSE_PROFILES=tunnel docker compose config -q)
           jq -e '.projects == ["stack"]' pie.json
 
       - name: Image
@@ -110,3 +110,7 @@ jobs:
           host: cargoship.tail4ee3b3.ts.net
           app: tasktracker
           bundle: bundle
+          # The tunnel runs only once its token is set (docs/deploy.md).
+          secrets: |
+            CLOUDFLARE_TUNNEL_TOKEN=${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+            COMPOSE_PROFILES=${{ secrets.CLOUDFLARE_TUNNEL_TOKEN != '' && 'tunnel' || '' }}
