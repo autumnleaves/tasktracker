@@ -156,8 +156,8 @@ public sealed class AgentApiTests : IDisposable
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
         await _client.PostAsJsonAsync($"/api/cards/{card.Id}/comments", new { body = "Thanks" }, TestApp.Json);
 
-        var comments = await _client.GetFromJsonAsync<List<Comment>>($"/api/cards/{card.Id}/comments", TestApp.Json);
-        Assert.Equal(new[] { "Claude", "Tom" }, comments!.Select(c => c.Author));
+        var comments = (await _client.GetFromJsonAsync<List<Comment>>($"/api/cards/{card.Id}/comments", TestApp.Json))!;
+        Assert.Equal(new[] { "Claude", "Tom" }, comments.Select(c => c.Author));
         Assert.Equal("Starting on this", comments[0].Body);
 
         var reloaded = await _client.GetFromJsonAsync<Card>($"/api/cards/{card.Id}", TestApp.Json);
