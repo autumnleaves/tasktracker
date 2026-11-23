@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using TaskTracker.Api;
 using TaskTracker.Api.Board;
 using TaskTracker.Api.Data;
 
@@ -27,6 +28,9 @@ app.UseExceptionHandler(new ExceptionHandlerOptions
     StatusCodeSelector = e => e is BadHttpRequestException bad ? bad.StatusCode : StatusCodes.Status500InternalServerError,
 });
 app.UseStatusCodePages();
+
+// A login for requests from outside, through the Cloudflare Tunnel (BasicAuth.cs).
+app.UseBasicAuthFromOutside();
 
 // The built web app (web/dist), copied into wwwroot by the Dockerfile. In development the
 // Vite dev server serves it instead and proxies /api here.

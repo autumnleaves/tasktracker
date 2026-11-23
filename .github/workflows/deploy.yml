@@ -114,3 +114,4 @@ jobs:
           secrets: |
             CLOUDFLARE_TUNNEL_TOKEN=${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
             COMPOSE_PROFILES=${{ secrets.CLOUDFLARE_TUNNEL_TOKEN != '' && 'tunnel' || '' }}
+            TASKTRACKER_PASSWORD=${{ secrets.TASKTRACKER_PASSWORD }}

@@ -17,10 +17,14 @@ public sealed class TestApp : WebApplicationFactory<Program>
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower, allowIntegerValues: false) },
     };
 
-    public TestApp(string? folder = null)
+    private readonly IReadOnlyDictionary<string, string?> _settings;
+
+    /// <param name="settings">More app settings, e.g. <c>BasicAuth:Password</c>.</param>
+    public TestApp(string? folder = null, IReadOnlyDictionary<string, string?>? settings = null)
     {
         Folder = folder ?? Path.Combine(Path.GetTempPath(), "tasktracker-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Folder);
+        _settings = settings ?? new Dictionary<string, string?>();
     }
 
     public string Folder { get; }
@@ -29,7 +33,7 @@ public sealed class TestApp : WebApplicationFactory<Program>
     // App configuration rather than UseSetting, so it wins over appsettings.json.
     protected override void ConfigureWebHost(IWebHostBuilder builder) =>
         builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
-            new Dictionary<string, string?> { ["ConnectionStrings:Tasks"] = $"Data Source={DbPath}" }));
+            new Dictionary<string, string?>(_settings) { ["ConnectionStrings:Tasks"] = $"Data Source={DbPath}" }));
 
     public async Task<BoardView> Board() =>
         (await CreateClient().GetFromJsonAsync<BoardView>("/api/board", Json))!;

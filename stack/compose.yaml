@@ -3,8 +3,8 @@
 # release. The image comes in the deploy bundle (docker load), not from a registry.
 #
 # Published on cargoship's port ${PORT}: http://cargoship:5280 at home and on the tailnet. With a
-# tunnel token, cloudflared also serves https://tasktracker.autumnleaves.net from anywhere, behind
-# Cloudflare Access.
+# tunnel token, cloudflared also serves https://tasktracker.autumnleaves.net from anywhere, where the
+# app asks for a basic-auth login (TASKTRACKER_USER and TASKTRACKER_PASSWORD).
 name: tasktracker
 
 services:
@@ -13,6 +13,10 @@ services:
     restart: unless-stopped
     environment:
       TZ: ${STACK_TZ}
+      # The login for requests through the tunnel (src/TaskTracker.Api/BasicAuth.cs). No password,
+      # no login.
+      BasicAuth__Username: ${TASKTRACKER_USER}
+      BasicAuth__Password: ${TASKTRACKER_PASSWORD:-}
     volumes:
       # The SQLite database (tasks.db) and its pre-migration backups (backups/).
       - ${APP_ROOT}/data:/data
@@ -21,8 +25,8 @@ services:
     tmpfs: [/tmp]
     security_opt: ["no-new-privileges:true"]
 
-  # Cloudflare Tunnel to this app, for https://tasktracker.autumnleaves.net behind Cloudflare
-  # Access (Tom's login in a browser, a service token for Claude). The tunnel's public hostname,
+  # Cloudflare Tunnel to this app, for https://tasktracker.autumnleaves.net, where the app asks for
+  # its basic-auth login (a browser prompts; Claude sends it). The tunnel's public hostname,
   # pointing at http://tasktracker:8080, is set in the Cloudflare dashboard. Started only when the
   # deploy has a token: the workflow then sets COMPOSE_PROFILES=tunnel.
   cloudflared:

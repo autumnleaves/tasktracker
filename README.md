@@ -2,11 +2,11 @@
 
 Tom's own task board, like a one-person Jira: cards in four columns (Backlog, To do, In progress, Done), dragged between them. Cards have a title, a Markdown description (with `- [ ]` checklists you can tick on the card), a priority, a due date and labels. One small container on `cargoship`, deployed by GitHub Actions on every push to `main` with [pie-delivery](https://github.com/autumnleaves/pie-delivery)'s Compose action. The rest of the homelab is described in [homelab-config](https://github.com/autumnleaves/homelab-config/blob/main/README.md).
 
-At [`https://tasktracker.autumnleaves.net`](https://tasktracker.autumnleaves.net), through a Cloudflare Tunnel behind Cloudflare Access: Tom's login in a browser, a service token for Claude. At home and on the tailnet it's also at `http://cargoship:5280` (`http://192.168.1.11:5280`), with no login.
+At [`https://tasktracker.autumnleaves.net`](https://tasktracker.autumnleaves.net), through a Cloudflare Tunnel, with a basic-auth login (the browser asks about once a month; Claude sends it). At home and on the tailnet it's also at `http://cargoship:5280` (`http://192.168.1.11:5280`), with no login.
 
 ```
- browser / Claude ── https ──▶ Cloudflare Access ──▶ tunnel ──▶ cloudflared ─┐
- at home ─────────── http ──▶ cargoship:5280 ───────────────────────────────┴▶ tasktracker container
+ browser / Claude ── https ──▶ Cloudflare ── tunnel ──▶ cloudflared ─(login)─┐
+ at home ─────────── http ──▶ cargoship:5280 ────────────────────────────────┴▶ tasktracker container
                                                                     ├─ /api/*  the API (.NET 10)
                                                                     └─ /*      the web app (React)
                                                                          │
@@ -52,7 +52,7 @@ JSON under `/api`. Statuses are `backlog`, `todo`, `in_progress`, `done`; priori
 
 Cards also carry their labels' names (`labels`) and `commentCount`. Card numbers are never reused, even after a delete.
 
-From outside, requests go through Cloudflare Access: a browser signs in, and scripts send a service token as `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers ([docs/deploy.md](docs/deploy.md#cloudflare-tunnel-and-access)).
+From outside, every request but `/api/health` needs the basic-auth login: a browser asks for it and then keeps a 30-day login cookie, and scripts send it (`curl -u tom:<password>`). The app tells outside requests by Cloudflare's `CF-Connecting-IP` header, so `http://cargoship:5280` needs none ([docs/deploy.md](docs/deploy.md#cloudflare-tunnel-and-login)).
 
 ## Data
 
@@ -74,5 +74,5 @@ CI ([`deploy.yml`](.github/workflows/deploy.yml)) runs the tests, type-checks an
 
 ## Status
 
-Running on `cargoship`, deployed with pie-delivery v2. The Cloudflare Tunnel starts once its token is set ([docs/deploy.md](docs/deploy.md#cloudflare-tunnel-and-access)); until then it's reachable at home and on the tailnet only.
+Running on `cargoship`, deployed with pie-delivery v2. The Cloudflare Tunnel starts once its token is set ([docs/deploy.md](docs/deploy.md#cloudflare-tunnel-and-login)); until then it's reachable at home and on the tailnet only.
 
