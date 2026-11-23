@@ -1,4 +1,4 @@
-# Checks every push and pull request; deploys main to cargoship. Setup: docs/deploy.md.
+# Checks every push and pull request; deploys main to cargoship with pie-delivery. See docs/deploy.md.
 name: deploy
 
 on:
@@ -42,11 +42,9 @@ jobs:
       - name: Compose file
         run: |
           cp stack/.env.example stack/.env
-          echo IMAGE_TAG=check >>stack/.env
+          printf 'APP_ROOT=/opt/apps/tasktracker\nRELEASE=check\n' >>stack/.env
           (cd stack && docker compose config -q)
-
-      - name: Shell scripts
-        run: shellcheck deploy/*.sh
+          jq -e '.projects == ["stack"]' pie.json
 
       - name: Image
         run: docker build -t tasktracker:${{ github.sha }} .
@@ -78,13 +76,16 @@ jobs:
           path: image.tar.gz
           retention-days: 3
 
-  # As in homelab-media: pie-delivery joins the tailnet, rsyncs the bundle (the image, stack/
-  # and deploy/) as tasktracker-deploy and runs the hook. The hook re-runs setup.sh, then
-  # activate.sh, then deletes the bundle whether or not it worked.
+  # pie-delivery's Compose action: joins the tailnet (workload identity federation, so no
+  # Tailscale secret), rsyncs the bundle to cargoship as `deploy` over Tailscale SSH, and runs
+  # pie-deploy there, which loads the image, starts it, checks /api/health and rolls back if not.
   deploy:
     needs: check
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_HOST != ''
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
     concurrency:
       group: deploy-cargoship-tasktracker
       cancel-in-progress: false
@@ -95,29 +96,17 @@ jobs:
         with:
           name: image
 
-      - name: Stage the deploy bundle
+      - name: Stage the bundle
         run: |
-          mkdir .deploy-bundle
-          cp -r stack deploy image.tar.gz .deploy-bundle/
+          mkdir -p bundle/images
+          cp -r stack pie.json bundle/
+          mv image.tar.gz bundle/images/tasktracker.tar.gz
 
-      - uses: autumnleaves/pie-delivery@bcc0179516cbf33c715206748872183d9ccc17a5 # v1.0.0
+      - uses: autumnleaves/pie-delivery/compose@91f7b9eb8fb2e918afade15eb5cd0e5ee6a1c0c2 # v2.0.1
         with:
-          tailscale-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          tailscale-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          host: ${{ vars.DEPLOY_HOST }}
-          user: tasktracker-deploy
-          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
-          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          source: .deploy-bundle
-          target: /opt/tasktracker/incoming/${{ github.sha }}
-          post-deploy: |
-            here=$(pwd -P)
-            trap 'cd / && rm -rf -- "$here"' EXIT
-            setup=(/usr/bin/bash "$here/deploy/setup.sh" --deploy)
-            if ! sudo -n -l "${setup[@]}" >/dev/null 2>&1; then
-              echo "::error::tasktracker-deploy may not run setup.sh as root yet. Once, on cargoship, from a copy" \
-                "of the repo: 'sudo bash deploy/setup.sh', then re-run the deploy. Nothing was changed."
-              exit 1
-            fi
-            sudo -n "${setup[@]}"
-            sudo -n /usr/bin/bash "$here/deploy/activate.sh" ${{ github.sha }}
+          # Not secrets: the federated identity only accepts GitHub's tokens for autumnleaves repos on main.
+          tailscale-oauth-client-id: TEE3HHt6KC11CNTRL-ko1GyqRYiC11CNTRL
+          tailscale-audience: api.tailscale.com/TEE3HHt6KC11CNTRL-ko1GyqRYiC11CNTRL
+          host: cargoship.tail4ee3b3.ts.net
+          app: tasktracker
+          bundle: bundle

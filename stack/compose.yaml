@@ -1,5 +1,6 @@
-# The task tracker on cargoship. Settings: .env (from .env.example plus IMAGE_TAG, written by
-# deploy/activate.sh). The image comes in the deploy bundle (docker load), not from a registry.
+# The task tracker on cargoship, deployed by pie-delivery's pie-deploy (pie.json). Its .env is
+# .env.example plus APP_ROOT (/opt/apps/tasktracker) and RELEASE (the git SHA), written per
+# release. The image comes in the deploy bundle (docker load), not from a registry.
 #
 # Published on cargoship's port ${PORT}: http://cargoship:5280 on the tailnet, and
 # https://tasktracker.autumnleaves.net through the Caddy proxy in homelab-media.
@@ -7,13 +8,13 @@ name: tasktracker
 
 services:
   tasktracker:
-    image: tasktracker:${IMAGE_TAG}
+    image: tasktracker:${RELEASE}
     restart: unless-stopped
     environment:
       TZ: ${STACK_TZ}
     volumes:
       # The SQLite database (tasks.db) and its pre-migration backups (backups/).
-      - ${DATA_ROOT}:/data
+      - ${APP_ROOT}/data:/data
     ports: ["${PORT}:8080"]
     read_only: true
     tmpfs: [/tmp]

@@ -18,7 +18,7 @@ COPY src/ src/
 RUN dotnet publish src/TaskTracker.Api/TaskTracker.Api.csproj -c Release -o /out --no-restore
 
 # Chiseled: no shell or package manager, runs as the non-root `app` user (UID 1654), which
-# must own the /data mount (deploy/setup.sh makes /opt/tasktracker/data that way).
+# must own the /data mount (pie.json has pie-deploy make /opt/apps/tasktracker/data that way).
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled
 WORKDIR /app
 COPY --from=api /out ./

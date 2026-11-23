@@ -1,5 +1,5 @@
 // Renovate (the Mend-hosted GitHub app) opens PRs for new NuGet, npm, base image and action
-// versions. Merging to main deploys, with activate.sh's health check and rollback.
+// versions. Merging to main deploys, with pie-deploy's health check and rollback.
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended"],
