@@ -13,6 +13,9 @@ namespace TaskTracker.Api.Data;
 /// a copy goes to <c>backups/</c> next to it, so a bad migration can be undone by hand.
 /// Keep migrations additive (new tables and nullable columns): a rollback runs the previous
 /// release against the newer schema.
+/// Migrations run with foreign keys off, so one can rebuild a table the way SQLite documents
+/// (copy it, drop the old one, rename) without the drop cascading to the rows that point at it;
+/// a migration that leaves a broken reference is rolled back.
 /// </remarks>
 public sealed partial class Database(string connectionString)
 {
@@ -63,14 +66,20 @@ public sealed partial class Database(string connectionString)
             logger.LogInformation("Backed up the database to {Backup} before migrating", backup);
         }
 
+        // Only takes effect outside a transaction. Open() turns it back on for the next user of
+        // this pooled connection.
+        connection.Execute("PRAGMA foreign_keys = OFF;");
         foreach (var migration in pending)
         {
             using var tx = connection.BeginTransaction();
             connection.Execute(migration.Sql, transaction: tx);
+            if (connection.Query("PRAGMA foreign_key_check;", transaction: tx).Any())
+                throw new InvalidOperationException($"Migration {migration.Name} left rows pointing at rows that don't exist");
             connection.Execute($"PRAGMA user_version = {migration.Version};", transaction: tx);
             tx.Commit();
             logger.LogInformation("Applied migration {Name}", migration.Name);
         }
+        connection.Execute("PRAGMA foreign_keys = ON;");
     }
 
     private static bool IsInMemory(string dataSource) =>

@@ -14,6 +14,8 @@ public static partial class BoardApi
     public const int MaxLabelName = 40;
     public const int MaxProjectName = 60;
 
+    private const string StatusHint = "Use backlog, todo, in_progress, in_review or done.";
+
     public static RouteGroupBuilder MapBoardApi(this RouteGroupBuilder api)
     {
         api.MapGet("/health", (BoardStore store) =>
@@ -100,7 +102,7 @@ public static partial class BoardApi
     {
         var errors = new Errors();
         var status = (statuses ?? []).Select(code => Codes.TryParseStatus(code, out var st) ? st : (CardStatus?)null).ToArray();
-        if (status.Any(st => st is null)) errors.Add("status", "Use backlog, todo, in_progress or done.");
+        if (status.Any(st => st is null)) errors.Add("status", StatusHint);
         var priority = (priorities ?? []).Select(code => Codes.TryParsePriority(code, out var p) ? p : (Priority?)null).ToArray();
         if (priority.Any(p => p is null)) errors.Add("priority", "Use low, medium, high or urgent.");
         if (errors.Any) return errors.Result();
@@ -209,7 +211,7 @@ public static partial class BoardApi
         if (Has("status"))
         {
             if (Read<CardStatus?>("status") is { } st) status = st;
-            else errors.Add("status", "Use backlog, todo, in_progress or done.");
+            else errors.Add("status", StatusHint);
         }
         int? index = Has("index") ? Read<int?>("index") : null;
         if (index is < 0) errors.Add("index", "Must be 0 or more.");

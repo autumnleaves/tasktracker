@@ -26,6 +26,7 @@
   --c-backlog: #8b62d6;
   --c-todo: #2f6fd0;
   --c-in_progress: #e0820a;
+  --c-in_review: #c2417f;
   --c-done: #2f9e63;
   --rule: var(--p-medium);
 
@@ -71,6 +72,7 @@
     --c-backlog: #a585e6;
     --c-todo: #6d9ff0;
     --c-in_progress: #f2a33a;
+    --c-in_review: #e77aac;
     --c-done: #56c08a;
     color-scheme: dark;
   }
@@ -301,7 +303,7 @@ textarea {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(260px, 1fr));
+  grid-template-columns: repeat(5, minmax(230px, 1fr));
   gap: 14px;
   padding: 4px 20px 20px;
   overflow-x: auto;
@@ -330,6 +332,10 @@ textarea {
 
 .lane-in_progress {
   --lane: var(--c-in_progress);
+}
+
+.lane-in_review {
+  --lane: var(--c-in_review);
 }
 
 .lane-done {
@@ -1078,7 +1084,7 @@ textarea {
     flex: none;
   }
   .board {
-    grid-template-columns: repeat(4, 85vw);
+    grid-template-columns: repeat(5, 85vw);
     scroll-snap-type: x mandatory;
     padding: 4px 12px 12px;
     gap: 10px;

@@ -1,7 +1,8 @@
 namespace TaskTracker.Api.Board;
 
-// In JSON (and in the database) these are snake_case: "backlog", "todo", "in_progress", "done".
-public enum CardStatus { Backlog, Todo, InProgress, Done }
+// In JSON (and in the database) these are snake_case: "backlog", "todo", "in_progress", "in_review",
+// "done". In board order: cards sort by this.
+public enum CardStatus { Backlog, Todo, InProgress, InReview, Done }
 
 public enum Priority { Low, Medium, High, Urgent }
 
@@ -81,6 +82,7 @@ public static class BoardColumns
         new(CardStatus.Backlog, "Backlog"),
         new(CardStatus.Todo, "To do"),
         new(CardStatus.InProgress, "In progress"),
+        new(CardStatus.InReview, "In review"),
         new(CardStatus.Done, "Done"),
     ];
 }
@@ -93,6 +95,7 @@ internal static class Codes
         [CardStatus.Backlog] = "backlog",
         [CardStatus.Todo] = "todo",
         [CardStatus.InProgress] = "in_progress",
+        [CardStatus.InReview] = "in_review",
         [CardStatus.Done] = "done",
     };
 

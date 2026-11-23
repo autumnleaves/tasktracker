@@ -54,6 +54,7 @@ public sealed class AgentApiTests : IDisposable
         var a = await _app.Create(new { title = "Write the skill", status = "in_progress", priority = "high", labels = new[] { "claude" } });
         var b = await _app.Create(new { title = "Buy milk", status = "todo" });
         var c = await _app.Create(new { title = "Old thing", status = "done", labels = new[] { "claude" } });
+        var d = await _app.Create(new { title = "Check the PR", status = "in_review" });
 
         Assert.Equal(new[] { a.Id }, (await List("?status=in_progress")).Select(x => x.Id));
         Assert.Equal(new[] { b.Id, a.Id }, (await List("?status=todo&status=in_progress")).Select(x => x.Id));
@@ -62,7 +63,11 @@ public sealed class AgentApiTests : IDisposable
         Assert.Equal(new[] { a.Id }, (await List("?priority=high")).Select(x => x.Id));
         Assert.Equal(new[] { b.Id }, (await List("?q=MILK")).Select(x => x.Id));
         Assert.Equal(new[] { c.Id }, (await List($"?q=%23{c.Id}")).Select(x => x.Id));
-        Assert.Equal(3, (await List("")).Count);
+        Assert.Equal(new[] { d.Id }, (await List("?status=in_review")).Select(x => x.Id));
+        Assert.Equal(4, (await List("")).Count);
+
+        Assert.Equal(CardStatus.InReview, (await PatchOk(b.Id, """{"status":"in_review"}""")).Status);
+        Assert.Equal(new[] { d.Id, b.Id }, (await List("?status=in_review")).Select(x => x.Id));
     }
 
     [Fact]
