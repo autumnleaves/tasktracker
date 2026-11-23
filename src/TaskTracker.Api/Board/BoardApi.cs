@@ -12,6 +12,7 @@ public static partial class BoardApi
     public const int MaxTitle = 200;
     public const int MaxDescription = 20_000;
     public const int MaxLabelName = 40;
+    public const int MaxProjectName = 60;
 
     public static RouteGroupBuilder MapBoardApi(this RouteGroupBuilder api)
     {
@@ -27,21 +28,28 @@ public static partial class BoardApi
             .WithSummary("Cards, filtered")
             .WithDescription(
                 "Cards in board order (column, then position). All filters are optional and combine: status " +
-                "(repeatable), label (a name; repeatable, all must match), priority (repeatable), q (text in the " +
-                "title or description, or #<number>), and includeDone=false to leave out Done.");
+                "(repeatable), label (a name; repeatable, all must match), project (a name; repeatable, any can " +
+                "match), priority (repeatable), q (text in the title or description, or #<number>), and " +
+                "includeDone=false to leave out Done.");
         api.MapPost("/cards", CreateCard)
             .WithSummary("Make a card")
             .WithDescription(
-                "At the bottom of its column. title is required. labels takes names (made if new); labelIds takes ids.");
+                "At the bottom of its column. title is required. labels takes names (made if new); labelIds takes " +
+                "ids. project takes a project's name (made if new), projectId its id; send one or neither.");
         api.MapGet("/cards/{id:long}", (long id, BoardStore store) =>
             store.GetCard(id) is { } card ? Results.Ok(card) : Results.NotFound());
-        api.MapPut("/cards/{id:long}", UpdateCard);
+        api.MapPut("/cards/{id:long}", UpdateCard)
+            .WithSummary("Replace a card's editable fields")
+            .WithDescription(
+                "title, description, priority, dueDate, labelIds and projectId. Left out, each goes back to its " +
+                "default (no labels, no project). Its column and order change through a move or a PATCH.");
         api.MapPatch("/cards/{id:long}", PatchCard)
             .WithSummary("Change some of a card's fields")
             .WithDescription(
                 "Only the fields sent change: title, description, priority, dueDate (null or \"\" clears it), " +
-                "labels (names, made if new; replaces the card's labels), labelIds (ids; replaces), status (moves " +
-                "the card to the bottom of that column, or to index if sent) and index.");
+                "labels (names, made if new; replaces the card's labels), labelIds (ids; replaces), project (a " +
+                "name, made if new) or projectId (null clears either), status (moves the card to the bottom of " +
+                "that column, or to index if sent) and index.");
         api.MapPost("/cards/{id:long}/move", MoveCard);
         api.MapDelete("/cards/{id:long}", (long id, BoardStore store) =>
             store.DeleteCard(id) ? Results.NoContent() : Results.NotFound());
@@ -54,6 +62,19 @@ public static partial class BoardApi
             .WithDescription("body is required; author is who's writing, e.g. \"Tom\" or \"Claude\" (default \"Tom\").");
         api.MapDelete("/comments/{id:long}", (long id, BoardStore store) =>
             store.DeleteComment(id) ? Results.NoContent() : Results.NotFound());
+
+        api.MapGet("/projects", (BoardStore store) => store.GetProjects())
+            .WithSummary("Projects, by name")
+            .WithDescription("Each card belongs to at most one project: an overarching piece of work, like a label but one per card.");
+        api.MapPost("/projects", CreateProject)
+            .WithSummary("Make a project")
+            .WithDescription("name (unique, ignoring case) and color (#rrggbb).");
+        api.MapPut("/projects/{id:long}", UpdateProject)
+            .WithSummary("Rename or recolour a project");
+        api.MapDelete("/projects/{id:long}", (long id, BoardStore store) =>
+                store.DeleteProject(id) ? Results.NoContent() : Results.NotFound())
+            .WithSummary("Delete a project")
+            .WithDescription("Its cards stay, without a project.");
 
         api.MapGet("/labels", (BoardStore store) => store.GetLabels());
         api.MapPost("/labels", CreateLabel);
@@ -72,6 +93,7 @@ public static partial class BoardApi
         BoardStore store,
         [FromQuery(Name = "status")] string[]? statuses,
         [FromQuery] string[]? label,
+        [FromQuery(Name = "project")] string[]? projects,
         [FromQuery(Name = "priority")] string[]? priorities,
         [FromQuery] string? q,
         [FromQuery] bool? includeDone)
@@ -89,6 +111,7 @@ public static partial class BoardApi
             (status.Length == 0 || status.Contains(c.Status)) &&
             (includeDone != false || c.Status != CardStatus.Done) &&
             (label is not { Length: > 0 } || label.All(l => c.Labels.Contains(l, StringComparer.OrdinalIgnoreCase))) &&
+            (projects is not { Length: > 0 } || (c.Project is { } p && projects.Contains(p, StringComparer.OrdinalIgnoreCase))) &&
             (priority.Length == 0 || priority.Contains(c.Priority)) &&
             (text.Length == 0 ||
              c.Title.Contains(text, StringComparison.OrdinalIgnoreCase) ||
@@ -105,12 +128,16 @@ public static partial class BoardApi
         var dueDate = errors.DueDate(request.DueDate);
         var labelIds = errors.LabelIds(request.LabelIds, store);
         var labelNames = errors.LabelNames(request.Labels);
+        var projectId = errors.ProjectId(request.ProjectId, store);
+        var projectName = errors.ProjectName(request.Project);
+        if (projectId is not null && projectName is not null) errors.Add("project", "Send project or projectId, not both.");
         if (errors.Any) return errors.Result();
         if (labelNames.Length > 0) labelIds = [.. labelIds.Union(store.LabelIdsByName(labelNames))];
+        if (projectName is not null) projectId = store.ProjectIdByName(projectName);
 
         var card = store.CreateCard(
             title, description, request.Status ?? CardStatus.Backlog, request.Priority ?? Priority.Medium,
-            dueDate, labelIds);
+            dueDate, labelIds, projectId);
         return Results.Created($"/api/cards/{card.Id}", card);
     }
 
@@ -121,14 +148,15 @@ public static partial class BoardApi
         var description = errors.Description(request.Description);
         var dueDate = errors.DueDate(request.DueDate);
         var labelIds = errors.LabelIds(request.LabelIds, store);
+        var projectId = errors.ProjectId(request.ProjectId, store);
         if (errors.Any) return errors.Result();
 
-        return store.UpdateCard(id, title, description, request.Priority ?? Priority.Medium, dueDate, labelIds)
+        return store.UpdateCard(id, title, description, request.Priority ?? Priority.Medium, dueDate, labelIds, projectId)
             is { } card ? Results.Ok(card) : Results.NotFound();
     }
 
     private static readonly HashSet<string> PatchFields =
-        ["title", "description", "priority", "dueDate", "labels", "labelIds", "status", "index"];
+        ["title", "description", "priority", "dueDate", "labels", "labelIds", "project", "projectId", "status", "index"];
 
     // A partial update: only the fields present change. Read as a JSON object (rather than a
     // record) to tell "absent" from "null", since a null dueDate clears it.
@@ -172,6 +200,11 @@ public static partial class BoardApi
         IReadOnlyList<long> labelIds = card.LabelIds;
         if (Has("labelIds")) labelIds = errors.LabelIds(Read<long[]>("labelIds"), store);
         var labelNames = Has("labels") ? errors.LabelNames(Read<string[]>("labels")) : null;
+        var projectId = card.ProjectId;
+        if (Has("projectId")) projectId = errors.ProjectId(Read<long?>("projectId"), store);
+        var projectName = Has("project") ? errors.ProjectName(Read<string>("project")) : null;
+        if (Has("project") && Has("projectId")) errors.Add("project", "Send project or projectId, not both.");
+        if (Has("project") && projectName is null) projectId = null;
         CardStatus? status = null;
         if (Has("status"))
         {
@@ -188,7 +221,8 @@ public static partial class BoardApi
             var named = store.LabelIdsByName(labelNames);
             labelIds = Has("labelIds") ? [.. labelIds.Union(named)] : named;
         }
-        var updated = store.UpdateCard(id, title, description, priority, dueDate, [.. labelIds]);
+        if (projectName is not null) projectId = store.ProjectIdByName(projectName);
+        var updated = store.UpdateCard(id, title, description, priority, dueDate, [.. labelIds], projectId);
         if (updated is not null && status is { } to && (to != card.Status || index is not null))
             updated = store.MoveCard(id, to, index);
         return updated is null ? Results.NotFound() : Results.Ok(updated);
@@ -224,32 +258,59 @@ public static partial class BoardApi
     private static IResult CreateLabel(LabelRequest request, BoardStore store)
     {
         var errors = new Errors();
-        var (name, color) = errors.Label(request);
+        var (name, color) = errors.Named(request.Name, request.Color, "label", MaxLabelName);
         if (errors.Any) return errors.Result();
 
         return store.CreateLabel(name, color) switch
         {
             (Outcome.Ok, { } label) => Results.Created($"/api/labels/{label.Id}", label),
-            _ => NameTaken(name),
+            _ => NameTaken("label", name),
         };
     }
 
     private static IResult UpdateLabel(long id, LabelRequest request, BoardStore store)
     {
         var errors = new Errors();
-        var (name, color) = errors.Label(request);
+        var (name, color) = errors.Named(request.Name, request.Color, "label", MaxLabelName);
         if (errors.Any) return errors.Result();
 
         return store.UpdateLabel(id, name, color) switch
         {
             (Outcome.Ok, { } label) => Results.Ok(label),
             (Outcome.NotFound, _) => Results.NotFound(),
-            _ => NameTaken(name),
+            _ => NameTaken("label", name),
         };
     }
 
-    private static IResult NameTaken(string name) =>
-        Results.Problem($"There's already a label called \"{name}\".", statusCode: StatusCodes.Status409Conflict);
+    private static IResult CreateProject(ProjectRequest request, BoardStore store)
+    {
+        var errors = new Errors();
+        var (name, color) = errors.Named(request.Name, request.Color, "project", MaxProjectName);
+        if (errors.Any) return errors.Result();
+
+        return store.CreateProject(name, color) switch
+        {
+            (Outcome.Ok, { } project) => Results.Created($"/api/projects/{project.Id}", project),
+            _ => NameTaken("project", name),
+        };
+    }
+
+    private static IResult UpdateProject(long id, ProjectRequest request, BoardStore store)
+    {
+        var errors = new Errors();
+        var (name, color) = errors.Named(request.Name, request.Color, "project", MaxProjectName);
+        if (errors.Any) return errors.Result();
+
+        return store.UpdateProject(id, name, color) switch
+        {
+            (Outcome.Ok, { } project) => Results.Ok(project),
+            (Outcome.NotFound, _) => Results.NotFound(),
+            _ => NameTaken("project", name),
+        };
+    }
+
+    private static IResult NameTaken(string kind, string name) =>
+        Results.Problem($"There's already a {kind} called \"{name}\".", statusCode: StatusCodes.Status409Conflict);
 
     [GeneratedRegex("^#[0-9a-fA-F]{6}$")]
     private static partial Regex HexColor();
@@ -313,13 +374,28 @@ public static partial class BoardApi
             return [.. names.Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)];
         }
 
-        public (string Name, string Color) Label(LabelRequest request)
+        public long? ProjectId(long? value, BoardStore store)
         {
-            var name = request.Name?.Trim() ?? "";
-            if (name.Length == 0) Add("name", "A label needs a name.");
-            else if (name.Length > MaxLabelName) Add("name", $"Keep label names to {MaxLabelName} characters.");
+            if (value is { } id && !store.ProjectExists(id)) Add("projectId", $"No project with id {id}.");
+            return value;
+        }
 
-            var color = request.Color?.Trim() ?? "";
+        /// <summary>A project's name, trimmed, or null for none (empty counts as none).</summary>
+        public string? ProjectName(string? value)
+        {
+            var name = value?.Trim() ?? "";
+            if (name.Length > MaxProjectName) Add("project", $"Keep project names to {MaxProjectName} characters.");
+            return name.Length == 0 ? null : name;
+        }
+
+        /// <summary>A label's or project's name and colour.</summary>
+        public (string Name, string Color) Named(string? nameValue, string? colorValue, string kind, int maxName)
+        {
+            var name = nameValue?.Trim() ?? "";
+            if (name.Length == 0) Add("name", $"A {kind} needs a name.");
+            else if (name.Length > maxName) Add("name", $"Keep {kind} names to {maxName} characters.");
+
+            var color = colorValue?.Trim() ?? "";
             if (!HexColor().IsMatch(color)) Add("color", "Use a colour like #3d6fa8.");
             return (name, color.ToLowerInvariant());
         }

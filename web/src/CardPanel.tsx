@@ -1,23 +1,28 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Card, CardFields, Column, Label, Status } from "./api";
+import type { Card, CardFields, Column, Label, Project, Status } from "./api";
 import { PRIORITIES, PRIORITY_NAMES, errorMessage } from "./api";
 import { longDateTime, toggleChecklistItem } from "./format";
 import { Comments } from "./Comments";
 import { LabelPicker } from "./LabelPicker";
 import { MarkdownView } from "./Markdown";
+import { ProjectSelect } from "./Projects";
 
 interface Props {
   /** The card to edit, or null to make a new one in `newStatus`. */
   card: Card | null;
   newStatus: Status;
+  /** The project a new card starts in. */
+  newProjectId: number | null;
   columns: Column[];
   labels: Label[];
+  projects: Project[];
   onClose: () => void;
   onCreate: (fields: CardFields & { status: Status }) => Promise<void>;
   onSave: (id: number, fields: CardFields) => Promise<Card>;
   onMove: (id: number, status: Status) => void;
   onDelete: (id: number) => Promise<void>;
   onCreateLabel: (name: string) => Promise<Label>;
+  onCreateProject: (name: string) => Promise<Project>;
   /** A comment was added or deleted. */
   onCommentsChange: () => void;
 }
@@ -26,10 +31,17 @@ type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved" } | { k
 
 const AUTOSAVE_MS = 700;
 
-function fieldsOf(card: Card | null): CardFields {
+function fieldsOf(card: Card | null, newProjectId: number | null = null): CardFields {
   return card
-    ? { title: card.title, description: card.description, priority: card.priority, dueDate: card.dueDate, labelIds: card.labelIds }
-    : { title: "", description: "", priority: "medium", dueDate: null, labelIds: [] };
+    ? {
+        title: card.title,
+        description: card.description,
+        priority: card.priority,
+        dueDate: card.dueDate,
+        labelIds: card.labelIds,
+        projectId: card.projectId,
+      }
+    : { title: "", description: "", priority: "medium", dueDate: null, labelIds: [], projectId: newProjectId };
 }
 
 /**
@@ -39,7 +51,7 @@ function fieldsOf(card: Card | null): CardFields {
 export function CardPanel(props: Props) {
   const { card, columns, labels, onClose } = props;
   const isNew = card === null;
-  const [draft, setDraft] = useState<CardFields>(() => fieldsOf(card));
+  const [draft, setDraft] = useState<CardFields>(() => fieldsOf(card, props.newProjectId));
   const [status, setStatus] = useState<Status>(card?.status ?? props.newStatus);
   const [editingDescription, setEditingDescription] = useState(isNew || !card.description.trim());
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
@@ -156,6 +168,15 @@ export function CardPanel(props: Props) {
           {titleMissing && !isNew && <p className="field-error">A card needs a title. Changes aren't saved until it has one.</p>}
 
           <div className="panel-fields">
+            <label className="project-field">
+              <span>Project</span>
+              <ProjectSelect
+                projects={props.projects}
+                value={draft.projectId}
+                onChange={(id) => set("projectId", id)}
+                onCreate={props.onCreateProject}
+              />
+            </label>
             <label>
               <span>Column</span>
               <select value={status} onChange={(e) => changeStatus(e.target.value as Status)}>

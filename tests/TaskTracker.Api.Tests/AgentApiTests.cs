@@ -5,7 +5,7 @@ using TaskTracker.Api.Board;
 
 namespace TaskTracker.Api.Tests;
 
-/// <summary>The parts of the API meant for scripts and agents: filters, PATCH, label names, comments.</summary>
+/// <summary>The parts of the API meant for scripts and agents: filters, PATCH, label and project names, comments.</summary>
 public sealed class AgentApiTests : IDisposable
 {
     private readonly TestApp _app = new();
@@ -63,6 +63,69 @@ public sealed class AgentApiTests : IDisposable
         Assert.Equal(new[] { b.Id }, (await List("?q=MILK")).Select(x => x.Id));
         Assert.Equal(new[] { c.Id }, (await List($"?q=%23{c.Id}")).Select(x => x.Id));
         Assert.Equal(3, (await List("")).Count);
+    }
+
+    [Fact]
+    public async Task Cards_can_be_made_with_a_project_name_which_is_created_when_new()
+    {
+        var existing = await _app.CreateProject("Homelab", "#2f8f6b");
+        var first = await _app.Create(new { title = "Tunnel", project = "homelab" });
+        var second = await _app.Create(new { title = "Stream", project = "5Stream" });
+
+        Assert.Equal(existing.Id, first.ProjectId);
+        Assert.Equal("Homelab", first.Project);
+        Assert.Equal("5Stream", second.Project);
+        var projects = (await _client.GetFromJsonAsync<List<Project>>("/api/projects", TestApp.Json))!;
+        Assert.Equal(new[] { "5Stream", "Homelab" }, projects.Select(p => p.Name));
+        Assert.Matches("^#[0-9a-f]{6}$", projects[0].Color);
+        Assert.Equal(projects, (await _app.Board()).Projects);
+    }
+
+    [Fact]
+    public async Task A_card_takes_a_project_by_name_or_id_but_not_both()
+    {
+        var project = await _app.CreateProject("Homelab");
+        var response = await _client.PostAsJsonAsync(
+            "/api/cards", new { title = "x", project = "Homelab", projectId = project.Id }, TestApp.Json);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        response = await _client.PostAsJsonAsync("/api/cards", new { title = "x", projectId = 999 }, TestApp.Json);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Listing_filters_by_any_of_several_projects()
+    {
+        var a = await _app.Create(new { title = "Tunnel", project = "Homelab" });
+        var b = await _app.Create(new { title = "Overlay", project = "5Stream" });
+        await _app.Create(new { title = "Buy milk" });
+        await _app.Create(new { title = "Other", project = "Garden" });
+
+        Assert.Equal(new[] { a.Id }, (await List("?project=homelab")).Select(x => x.Id));
+        Assert.Equal(new[] { a.Id, b.Id }, (await List("?project=Homelab&project=5Stream")).Select(x => x.Id));
+        Assert.Empty(await List("?project=nope"));
+    }
+
+    [Fact]
+    public async Task Patch_sets_changes_and_clears_the_project()
+    {
+        var card = await _app.Create(new { title = "Drifting", labels = new[] { "keep" } });
+        var other = await _app.CreateProject("Garden");
+
+        var named = await PatchOk(card.Id, """{"project":"Homelab"}""");
+        Assert.Equal("Homelab", named.Project);
+        Assert.Equal(card.LabelIds, named.LabelIds);
+
+        var untouched = await PatchOk(card.Id, """{"title":"Still in Homelab"}""");
+        Assert.Equal("Homelab", untouched.Project);
+
+        var byId = await PatchOk(card.Id, $$"""{"projectId":{{other.Id}}}""");
+        Assert.Equal("Garden", byId.Project);
+
+        Assert.Null((await PatchOk(card.Id, """{"project":null}""")).ProjectId);
+        await PatchOk(card.Id, $$"""{"projectId":{{other.Id}}}""");
+        var cleared = await PatchOk(card.Id, """{"projectId":null}""");
+        Assert.Null(cleared.ProjectId);
+        Assert.Null(cleared.Project);
     }
 
     [Fact]
@@ -126,6 +189,8 @@ public sealed class AgentApiTests : IDisposable
     [InlineData("""{"dueDate":"tomorrow"}""", "dueDate")]
     [InlineData("""{"labelIds":[999]}""", "labelIds")]
     [InlineData("""{"index":-1}""", "index")]
+    [InlineData("""{"projectId":999}""", "projectId")]
+    [InlineData("""{"project":"a","projectId":null}""", "project")]
     public async Task Patch_rejects_bad_fields(string json, string field)
     {
         var card = await _app.Create(new { title = "Target" });
@@ -198,6 +263,7 @@ public sealed class AgentApiTests : IDisposable
         var json = await _client.GetStringAsync("/api/openapi.json");
         Assert.Contains("\"/api/cards/{id}\"", json);
         Assert.Contains("patch", json);
+        Assert.Contains("\"/api/projects/{id}\"", json);
     }
 
     private sealed record ValidationProblem(Dictionary<string, string[]> Errors);

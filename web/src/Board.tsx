@@ -22,7 +22,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useRef, useState, type KeyboardEvent } from "react";
-import type { Card, Column, Label, Status } from "./api";
+import type { Card, Column, Label, Project, Status } from "./api";
 import { CardTile } from "./CardTile";
 import { QuickAdd } from "./QuickAdd";
 
@@ -35,6 +35,7 @@ interface Props {
   /** How many cards each column has before filtering. */
   totals: Record<Status, number>;
   labels: Map<number, Label>;
+  projects: Map<number, Project>;
   filtering: boolean;
   onOpen: (id: number) => void;
   /** A card was dropped: `visibleOrder` is the target column's shown cards, with it in place. */
@@ -44,7 +45,7 @@ interface Props {
 
 const COLUMN_PREFIX = "column:";
 
-export function Board({ columns, lanes, totals, labels, filtering, onOpen, onMove, onQuickAdd }: Props) {
+export function Board({ columns, lanes, totals, labels, projects, filtering, onOpen, onMove, onQuickAdd }: Props) {
   const cards = new Map(Object.values(lanes).flat().map((c) => [c.id, c]));
   const fromProps = Object.fromEntries(
     columns.map((col) => [col.id, lanes[col.id].map((c) => c.id)]),
@@ -145,6 +146,7 @@ export function Board({ columns, lanes, totals, labels, filtering, onOpen, onMov
             ids={current[col.id]}
             cards={cards}
             labels={labels}
+            projects={projects}
             total={totals[col.id]}
             filtering={filtering}
             dragging={activeId !== null}
@@ -154,7 +156,7 @@ export function Board({ columns, lanes, totals, labels, filtering, onOpen, onMov
         ))}
       </div>
       <DragOverlay dropAnimation={{ duration: 150, easing: "ease-out" }}>
-        {active ? <CardTile card={active} labels={labels} overlay /> : null}
+        {active ? <CardTile card={active} labels={labels} projects={projects} overlay /> : null}
       </DragOverlay>
     </DndContext>
   );
@@ -165,6 +167,7 @@ interface LaneProps {
   ids: number[];
   cards: Map<number, Card>;
   labels: Map<number, Label>;
+  projects: Map<number, Project>;
   total: number;
   filtering: boolean;
   dragging: boolean;
@@ -172,7 +175,7 @@ interface LaneProps {
   onQuickAdd: (status: Status, title: string) => Promise<void>;
 }
 
-function Lane({ column, ids, cards, labels, total, filtering, dragging, onOpen, onQuickAdd }: LaneProps) {
+function Lane({ column, ids, cards, labels, projects, total, filtering, dragging, onOpen, onQuickAdd }: LaneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: COLUMN_PREFIX + column.id });
   const count = filtering && ids.length !== total ? `${ids.length} of ${total}` : `${total}`;
 
@@ -186,7 +189,7 @@ function Lane({ column, ids, cards, labels, total, filtering, dragging, onOpen, 
         <SortableContext items={ids} strategy={verticalListSortingStrategy}>
           {ids.map((id) => {
             const card = cards.get(id);
-            return card ? <SortableCard key={id} card={card} labels={labels} onOpen={onOpen} /> : null;
+            return card ? <SortableCard key={id} card={card} labels={labels} projects={projects} onOpen={onOpen} /> : null;
           })}
         </SortableContext>
         {ids.length === 0 && (
@@ -200,7 +203,14 @@ function Lane({ column, ids, cards, labels, total, filtering, dragging, onOpen, 
   );
 }
 
-function SortableCard({ card, labels, onOpen }: { card: Card; labels: Map<number, Label>; onOpen: (id: number) => void }) {
+interface SortableCardProps {
+  card: Card;
+  labels: Map<number, Label>;
+  projects: Map<number, Project>;
+  onOpen: (id: number) => void;
+}
+
+function SortableCard({ card, labels, projects, onOpen }: SortableCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id });
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -221,10 +231,10 @@ function SortableCard({ card, labels, onOpen }: { card: Card; labels: Map<number
       {...listeners}
       onKeyDown={onKeyDown}
       onClick={() => onOpen(card.id)}
-      aria-label={`#${card.id} ${card.title}. Enter to open, Space to move.`}
+      aria-label={`#${card.id} ${card.title}${card.project ? ` (${card.project})` : ""}. Enter to open, Space to move.`}
       aria-roledescription="card"
     >
-      <CardTile card={card} labels={labels} />
+      <CardTile card={card} labels={labels} projects={projects} />
     </div>
   );
 }

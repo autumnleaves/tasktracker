@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Board as BoardData, Card, CardFields, Label, Priority, Status } from "./api";
+import type { Board as BoardData, Card, CardFields, Label, Priority, Project, Status } from "./api";
 import { PRIORITIES, PRIORITY_NAMES, STATUSES, api, errorMessage } from "./api";
 import { Board } from "./Board";
 import { CardPanel } from "./CardPanel";
 import { LabelChip, nextLabelColor } from "./LabelChip";
 import { LabelsDialog } from "./LabelsDialog";
+import { ProjectFilter, type ProjectSelection } from "./Projects";
 
 type Panel = { kind: "edit"; id: number } | { kind: "new"; status: Status } | null;
 
@@ -35,11 +36,12 @@ export function App() {
     const id = cardFromUrl();
     return id === null ? null : { kind: "edit", id };
   });
-  const [labelsOpen, setLabelsOpen] = useState(false);
+  const [manage, setManage] = useState<"label" | "project" | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [query, setQuery] = useState("");
   const [labelFilter, setLabelFilter] = useState<number[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<Priority[]>([]);
+  const [projectFilter, setProjectFilter] = useState<ProjectSelection>([]);
   const search = useRef<HTMLInputElement>(null);
 
   const toast = useCallback((text: string) => {
@@ -124,11 +126,20 @@ export function App() {
     return label;
   };
 
+  const createProject = async (name: string, color?: string): Promise<Project> => {
+    const project = await api.createProject(name, color ?? nextLabelColor(board?.projects ?? []));
+    setBoard((b) => b && { ...b, projects: [...b.projects, project].sort((x, y) => x.name.localeCompare(y.name)) });
+    return project;
+  };
+
+  // While the board shows just one project, new cards start in it, so they don't vanish when added.
+  const filteredProject = projectFilter.length === 1 ? projectFilter[0] : null;
+
   // Keyboard: "c" makes a card, "/" jumps to search.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (panel || labelsOpen || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (panel || manage || e.ctrlKey || e.metaKey || e.altKey) return;
       if (target.closest("input, textarea, select, [contenteditable]")) return;
       if (e.key === "c") {
         e.preventDefault();
@@ -140,10 +151,12 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [panel, labelsOpen]);
+  }, [panel, manage]);
 
   const labelMap = useMemo(() => new Map((board?.labels ?? []).map((l) => [l.id, l])), [board]);
-  const filtering = query.trim() !== "" || labelFilter.length > 0 || priorityFilter.length > 0;
+  const projectMap = useMemo(() => new Map((board?.projects ?? []).map((p) => [p.id, p])), [board]);
+  const filtering =
+    query.trim() !== "" || labelFilter.length > 0 || priorityFilter.length > 0 || projectFilter.length > 0;
 
   const { lanes, totals } = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -151,7 +164,8 @@ export function App() {
     const matches = (c: Card) =>
       (!q || c.title.toLowerCase().includes(q) || c.description.toLowerCase().includes(q) || String(c.id) === number) &&
       (labelFilter.length === 0 || labelFilter.every((id) => c.labelIds.includes(id))) &&
-      (priorityFilter.length === 0 || priorityFilter.includes(c.priority));
+      (priorityFilter.length === 0 || priorityFilter.includes(c.priority)) &&
+      (projectFilter.length === 0 || projectFilter.includes(c.projectId));
     const lanes = {} as Record<Status, Card[]>;
     const totals = {} as Record<Status, number>;
     for (const status of STATUSES) {
@@ -160,11 +174,18 @@ export function App() {
       totals[status] = all.length;
     }
     return { lanes, totals };
-  }, [board, query, labelFilter, priorityFilter]);
+  }, [board, query, labelFilter, priorityFilter, projectFilter]);
 
   const usage = useMemo(() => {
     const counts = new Map<number, number>();
     for (const c of board?.cards ?? []) for (const id of c.labelIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+    return counts;
+  }, [board]);
+
+  // Cards per project; null counts the cards without one.
+  const projectUsage = useMemo(() => {
+    const counts = new Map<number | null, number>();
+    for (const c of board?.cards ?? []) counts.set(c.projectId, (counts.get(c.projectId) ?? 0) + 1);
     return counts;
   }, [board]);
 
@@ -205,6 +226,14 @@ export function App() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Escape" && (setQuery(""), e.currentTarget.blur())}
           />
+          {(board.projects.length > 0 || projectFilter.length > 0) && (
+            <ProjectFilter
+              projects={board.projects}
+              selected={projectFilter}
+              counts={projectUsage}
+              onChange={setProjectFilter}
+            />
+          )}
           <div className="filter-group" role="group" aria-label="Filter by priority">
             {PRIORITIES.filter((p) => p !== "medium").map((p) => (
               <button
@@ -242,6 +271,7 @@ export function App() {
                 setQuery("");
                 setLabelFilter([]);
                 setPriorityFilter([]);
+                setProjectFilter([]);
               }}
             >
               Clear filters
@@ -249,7 +279,10 @@ export function App() {
           )}
         </div>
         <div className="topbar-actions">
-          <button type="button" className="quiet" onClick={() => setLabelsOpen(true)}>
+          <button type="button" className="quiet" onClick={() => setManage("project")}>
+            Projects
+          </button>
+          <button type="button" className="quiet" onClick={() => setManage("label")}>
             Labels
           </button>
           <button type="button" className="primary" title="Shortcut: C" onClick={() => setPanel({ kind: "new", status: "backlog" })}>
@@ -263,11 +296,22 @@ export function App() {
         lanes={lanes}
         totals={totals}
         labels={labelMap}
+        projects={projectMap}
         filtering={filtering}
         onOpen={(id) => setPanel({ kind: "edit", id })}
         onMove={onDrop}
         onQuickAdd={async (status, title) => {
-          await mutate(() => api.createCard({ title, description: "", priority: "medium", dueDate: null, labelIds: [], status }));
+          await mutate(() =>
+            api.createCard({
+              title,
+              description: "",
+              priority: "medium",
+              dueDate: null,
+              labelIds: [],
+              projectId: filteredProject,
+              status,
+            }),
+          );
         }}
       />
 
@@ -279,8 +323,10 @@ export function App() {
           key={openCard ? openCard.id : "new"}
           card={openCard ?? null}
           newStatus={panel?.kind === "new" ? panel.status : "backlog"}
+          newProjectId={filteredProject}
           columns={board.columns}
           labels={board.labels}
+          projects={board.projects}
           onClose={() => setPanel(null)}
           onCreate={async (fields) => {
             await mutate(() => api.createCard(fields), true);
@@ -296,19 +342,35 @@ export function App() {
             setPanel(null);
           }}
           onCreateLabel={(name) => createLabel(name)}
+          onCreateProject={(name) => createProject(name)}
           onCommentsChange={() => void refresh()}
         />
       )}
-      {labelsOpen && (
+      {manage === "label" && (
         <LabelsDialog
+          kind="label"
           labels={board.labels}
           usage={usage}
-          onClose={() => setLabelsOpen(false)}
+          onClose={() => setManage(null)}
           onCreate={(name, color) => mutate(() => createLabel(name, color), true)}
           onUpdate={(id, name, color) => mutate(() => api.updateLabel(id, name, color), true)}
           onDelete={async (id) => {
             await mutate(() => api.deleteLabel(id), true);
             setLabelFilter((f) => f.filter((x) => x !== id));
+          }}
+        />
+      )}
+      {manage === "project" && (
+        <LabelsDialog
+          kind="project"
+          labels={board.projects}
+          usage={projectUsage}
+          onClose={() => setManage(null)}
+          onCreate={(name, color) => mutate(() => createProject(name, color), true)}
+          onUpdate={(id, name, color) => mutate(() => api.updateProject(id, name, color), true)}
+          onDelete={async (id) => {
+            await mutate(() => api.deleteProject(id), true);
+            setProjectFilter((f) => f.filter((x) => x !== id));
           }}
         />
       )}

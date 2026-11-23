@@ -4,17 +4,26 @@ import { errorMessage } from "./api";
 import { LABEL_COLORS, nextLabelColor } from "./LabelChip";
 
 interface Props {
+  /** Labels, or projects: both are a name and a colour. */
+  kind: "label" | "project";
   labels: Label[];
-  /** How many cards have each label. */
-  usage: Map<number, number>;
+  /** How many cards have each one, by id. */
+  usage: ReadonlyMap<number | null, number>;
   onClose: () => void;
   onCreate: (name: string, color: string) => Promise<unknown>;
   onUpdate: (id: number, name: string, color: string) => Promise<unknown>;
   onDelete: (id: number) => Promise<unknown>;
 }
 
-/** Rename, recolour and delete labels, or add new ones. */
-export function LabelsDialog({ labels, usage, onClose, onCreate, onUpdate, onDelete }: Props) {
+const EMPTY = {
+  label: "No labels yet. Labels group cards across columns, like “homelab” or “5Stream”.",
+  project: "No projects yet. A project is the bigger piece of work a card is part of, like “Move house”. Each card has at most one.",
+};
+
+/** Rename, recolour and delete labels (or projects), or add new ones. */
+export function LabelsDialog({ kind, labels, usage, onClose, onCreate, onUpdate, onDelete }: Props) {
+  const title = kind === "label" ? "Labels" : "Projects";
+  const Kind = kind === "label" ? "Label" : "Project";
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +55,7 @@ export function LabelsDialog({ labels, usage, onClose, onCreate, onUpdate, onDel
     <div className="panel-backdrop centered" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="labels-title">
         <header className="panel-head">
-          <h2 id="labels-title">Labels</h2>
+          <h2 id="labels-title">{title}</h2>
           <button type="button" className="quiet" onClick={onClose}>
             Close
           </button>
@@ -56,12 +65,13 @@ export function LabelsDialog({ labels, usage, onClose, onCreate, onUpdate, onDel
             <LabelRow
               key={label.id}
               label={label}
+              kind={Kind}
               uses={usage.get(label.id) ?? 0}
               onUpdate={(name, color) => attempt(() => onUpdate(label.id, name, color))}
               onDelete={() => attempt(() => onDelete(label.id))}
             />
           ))}
-          {labels.length === 0 && <li className="hint">No labels yet. Labels group cards across columns, like “homelab” or “5Stream”.</li>}
+          {labels.length === 0 && <li className="hint">{EMPTY[kind]}</li>}
         </ul>
         <form
           className="label-new"
@@ -70,9 +80,14 @@ export function LabelsDialog({ labels, usage, onClose, onCreate, onUpdate, onDel
             void add();
           }}
         >
-          <input value={newName} placeholder="New label name" aria-label="New label name" onChange={(e) => setNewName(e.target.value)} />
+          <input
+            value={newName}
+            placeholder={`New ${kind} name`}
+            aria-label={`New ${kind} name`}
+            onChange={(e) => setNewName(e.target.value)}
+          />
           <button type="submit" className="primary" disabled={!newName.trim()}>
-            Add label
+            Add {kind}
           </button>
         </form>
         {error && <p className="field-error">{error}</p>}
@@ -83,11 +98,13 @@ export function LabelsDialog({ labels, usage, onClose, onCreate, onUpdate, onDel
 
 function LabelRow({
   label,
+  kind,
   uses,
   onUpdate,
   onDelete,
 }: {
   label: Label;
+  kind: string;
   uses: number;
   onUpdate: (name: string, color: string) => Promise<boolean>;
   onDelete: () => Promise<boolean>;
@@ -119,7 +136,7 @@ function LabelRow({
       </div>
       <input
         value={name}
-        aria-label="Label name"
+        aria-label={`${kind} name`}
         onChange={(e) => setName(e.target.value)}
         onBlur={() => void commitName()}
         onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}

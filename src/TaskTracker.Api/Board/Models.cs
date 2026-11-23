@@ -9,6 +9,9 @@ public sealed record Column(CardStatus Id, string Name);
 
 public sealed record Label(long Id, string Name, string Color);
 
+/// <summary>An overarching piece of work that cards belong to (each card to at most one).</summary>
+public sealed record Project(long Id, string Name, string Color);
+
 public sealed record Card(
     long Id,
     string Title,
@@ -23,16 +26,21 @@ public sealed record Card(
     DateTimeOffset? CompletedAt,
     // The labels' names, in the same order as LabelIds.
     IReadOnlyList<string> Labels,
-    int CommentCount);
+    int CommentCount,
+    // The card's project, or null for none, and its name.
+    long? ProjectId,
+    string? Project);
 
 public sealed record Comment(long Id, long CardId, string Author, string Body, DateTimeOffset CreatedAt);
 
 /// <summary>Everything the board page shows, in one response.</summary>
-public sealed record BoardView(IReadOnlyList<Column> Columns, IReadOnlyList<Card> Cards, IReadOnlyList<Label> Labels);
+public sealed record BoardView(
+    IReadOnlyList<Column> Columns, IReadOnlyList<Card> Cards, IReadOnlyList<Label> Labels, IReadOnlyList<Project> Projects);
 
 /// <summary>
 /// A new card. Labels can be given by id (<see cref="LabelIds"/>) or by name (<see cref="Labels"/>,
-/// made if they don't exist yet), or both.
+/// made if they don't exist yet), or both. The project likewise, by <see cref="ProjectId"/> or by
+/// name (<see cref="Project"/>), but not both.
 /// </summary>
 public sealed record CreateCardRequest(
     string? Title,
@@ -41,20 +49,28 @@ public sealed record CreateCardRequest(
     Priority? Priority = null,
     string? DueDate = null,
     long[]? LabelIds = null,
-    string[]? Labels = null);
+    string[]? Labels = null,
+    long? ProjectId = null,
+    string? Project = null);
 
-/// <summary>Replaces a card's editable fields. Its column and order change through a move.</summary>
+/// <summary>
+/// Replaces a card's editable fields (leaving out <see cref="ProjectId"/> takes it out of its
+/// project). Its column and order change through a move.
+/// </summary>
 public sealed record UpdateCardRequest(
     string? Title,
     string? Description = null,
     Priority? Priority = null,
     string? DueDate = null,
-    long[]? LabelIds = null);
+    long[]? LabelIds = null,
+    long? ProjectId = null);
 
 /// <summary>Moves a card to <see cref="Index"/> in a column (0 is the top; past the end means the bottom).</summary>
 public sealed record MoveCardRequest(CardStatus? Status, int? Index = null);
 
 public sealed record LabelRequest(string? Name, string? Color);
+
+public sealed record ProjectRequest(string? Name, string? Color);
 
 public sealed record CommentRequest(string? Body, string? Author = null);
 

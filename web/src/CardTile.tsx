@@ -1,26 +1,32 @@
-import type { Card, Label } from "./api";
+import type { Card, Label, Project } from "./api";
 import { PRIORITY_NAMES } from "./api";
 import { checklist, completedText, dueInfo } from "./format";
 import { LabelChip } from "./LabelChip";
+import { ProjectTag } from "./Projects";
 
 interface Props {
   card: Card;
   labels: Map<number, Label>;
+  projects: Map<number, Project>;
   /** Drawn under the pointer while dragging. */
   overlay?: boolean;
 }
 
-export function CardTile({ card, labels, overlay }: Props) {
+export function CardTile({ card, labels, projects, overlay }: Props) {
   const due = card.status === "done" ? null : dueInfo(card);
   const done = card.status === "done" ? completedText(card) : null;
   const tasks = checklist(card.description);
+  const project = card.projectId === null ? undefined : projects.get(card.projectId);
   const cardLabels = card.labelIds.map((id) => labels.get(id)).filter((l): l is Label => !!l);
   const hasFooter = due || done || tasks || card.commentCount > 0 || (card.description.trim() && !tasks);
 
   return (
     <div className={`card-tile${overlay ? " overlay" : ""}`} data-priority={card.priority}>
       <div className="card-head">
-        <span className="card-number">#{card.id}</span>
+        <span className="card-ident">
+          <span className="card-number">#{card.id}</span>
+          {project && <ProjectTag project={project} />}
+        </span>
         {card.priority !== "medium" && <span className="priority">{PRIORITY_NAMES[card.priority]}</span>}
       </div>
       <div className="card-title">{card.title}</div>
