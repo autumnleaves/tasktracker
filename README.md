@@ -60,7 +60,7 @@ From outside, every request but `/api/health` needs the basic-auth login: a brow
 
 One SQLite file, `/opt/apps/tasktracker/data/tasks.db` on `cargoship`, mounted into the container at `/data`. It's on `cargoship`'s own disk, so the weekly VM backup covers it. Before the app applies a schema migration to an existing database, it copies it to `data/backups/tasks-v<old version>-<time>.db`.
 
-Migrations should only add things (tables, nullable columns): a failed deploy rolls back to the previous release, which then runs against the newer schema.
+Migrations mostly add things (tables, nullable columns). When one has to rebuild a table, it keeps the columns the previous release reads: a failed deploy rolls back to that release, which then runs against the newer schema. Data the previous release doesn't know (an `in_review` card, say) it can't show, so after a bad release the fix is a new one, not a rollback.
 
 ## Developing
 
